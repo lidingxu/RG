@@ -1,12 +1,11 @@
 import os
 import numpy as np
 import pandas as pd
-import cvxpy as cvx
 from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.base import BaseEstimator, ClassifierMixin
 import time
 
-from .beam_search import beam_search, beam_search_K1
+from beam_search import beam_search, beam_search_K1
 
 
 class BooleanRuleCG(BaseEstimator, ClassifierMixin):
@@ -31,8 +30,6 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         D=10,
         B=5,
         eps=1e-6,
-        solver='ECOS',
-        verbose=False,
         silent=False):
         """
         Args:
@@ -45,8 +42,6 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             D (int, optional): Column generation - maximum degree
             B (int, optional): Column generation - beam search width
             eps (float, optional): Numerical tolerance on comparisons
-            solver (str, optional): Linear programming - solver
-            verbose (bool, optional): Linear programming - verboseness
             silent (bool, optional): Silence overall algorithm messages
         """
         # Complexity parameters
@@ -62,11 +57,39 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         self.B = B                  # beam search width
         # Numerical tolerance on comparisons
         self.eps = eps
-        # Linear programming parameters
-        self.solver = solver        # solver
-        self.verbose = verbose      # verboseness
         # Silence output
         self.silent = silent
+
+    # check wether a solution is feasible
+    def _feasible(self, w, C):
+        is_box = True
+        for wi in w:
+            if wi < 0 or wi > 1:
+                is_box = False
+                return False
+        return True
+    
+    # return the value of the continuous loss function
+    def _loss(self, A, w, P, Z, cs):
+        Aw = np.dot(A, w)
+        Ploss = np.sum(max(1 - Aw[P], 0))
+        Zloss = np.sum(min(Aw[Z], 1))
+        loss =  (Ploss + Zloss) / A.shape[1]  + cs * w
+        return loss
+
+    # return a gradient as row vector
+    def _gradient(self, A, w, Pindicate, Zindicate, cs):
+        Aw = np.dot(A, w)
+        Z_AwLE1 = np.where(Aw <= 1 and Zindicate)[0]
+        P_AwGE1 = np.where(Aw >= 1 and Pindicate)[0]
+        g = (np.sum(A[Z_AwLE1], 1) - np.sum(A[P_AwGE1], 1)) / A.shape[1] + cs
+        return g, w
+
+    # gradient descent with line search
+    def _line_search(self, w, g, step):
+        w_test = w - step * g
+
+        return w
 
     def fit(self, X, y):
         """Fit model to training data.
@@ -84,8 +107,10 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             # Flip labels for CNF
             y = 1 - y
         # Positive (y = 1) and negative (y = 0) samples
-        P = np.where(y > 0.5)[0]
-        Z = np.where(y < 0.5)[0]
+        Pindicate = y > 0.5
+        P = np.where(Pindicate)[0]
+        Zindicate = y < 0.5
+        Z = np.where(Zindicate)[0]
         nP = len(P)
         n = len(y)
 
@@ -93,37 +118,23 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         # Feature indicator and conjunction matrices
         z = pd.DataFrame(np.eye(X.shape[1], X.shape[1]+1, 1, dtype=int), index=X.columns)
         A = np.hstack((np.ones((X.shape[0],1), dtype=int), X))
+
+        cs = self.lambda0 + self.lambda1 * z.sum().values
+        cs[0] = 0
+
         # Iteration counter
         self.it = 0
         # Start time
         self.starttime = time.time()
 
         # Formulate master LP
-        # Variables
-        w = cvx.Variable(A.shape[1], nonneg=True)
-        xi = cvx.Variable(nP, nonneg=True)
-        # Objective function (no penalty on empty conjunction)
-        cs = self.lambda0 + self.lambda1 * z.sum().values
-        cs[0] = 0
-        obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[Z,:] * w) / n + cs * w)
-        # Constraints
-        constraints = [xi + A[P,:] * w >= 1]
-
-        # Solve problem
-        prob = cvx.Problem(obj, constraints)
-        prob.solve(solver=self.solver, verbose=self.verbose)
-        if not self.silent:
-            print('Initial LP solved')
-
-        # Extract dual variables
-        r = np.ones_like(y, dtype=float) / n
-        r[P] = -constraints[0].dual_value
+        w = np.zeros(A.shape[1])
 
         # Beam search for conjunctions with negative reduced cost
         # Most negative reduced cost among current variables
-        UB = np.dot(r, A) + cs
+        UB = np.dot(g, A) + cs
         UB = min(UB.min(), 0)
-        v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1,
+        v, zNew, Anew = beam_search(g, X, self.lambda0, self.lambda1,
                                     K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
 
         while (v < -self.eps).any() and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
@@ -135,33 +146,29 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             # Add to existing conjunctions
             z = pd.concat([z, zNew], axis=1, ignore_index=True)
             A = np.concatenate((A, Anew), axis=1)
-
-            # Reformulate master LP
-            # Variables
-            w = cvx.Variable(A.shape[1], nonneg=True)
-            # Objective function
             cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
-            obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[Z,:] * w) / n + cs * w)
-            # Constraints
-            constraints = [xi + A[P,:] * w >= 1]
 
-            # Solve problem
-            prob = cvx.Problem(obj, constraints)
-            prob.solve(solver=self.solver, verbose=self.verbose)
+            # Compute gradient
+            g, w = self._gradient(A, w, Pindicate, Zindicate, cs)
 
             # Extract dual variables
-            r[P] = -constraints[0].dual_value
+            
 
             # Beam search for conjunctions with negative reduced cost
             # Most negative reduced cost among current variables
             UB = np.dot(r, A) + cs
             UB = min(UB.min(), 0)
-            v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1,
-                                        K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
+            v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1, K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
+
+            # Compute gradient
+            g, w = self._gradient(A, w, Pindicate, Zindicate)
+
+            # Descent
+            w = self._line_search(g, w)
+
 
         # Save generated conjunctions and LP solution
         self.z = z
-        self.wLP = w.value
 
         r = np.full(nP, 1./n)
         self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
@@ -243,3 +250,4 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             'isCNF': self.CNF,
             'rules': conj
         }
+
