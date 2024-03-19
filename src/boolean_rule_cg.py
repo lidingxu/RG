@@ -65,25 +65,31 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         is_box = True
         for wi in w:
             if wi < 0 or wi > 1:
-                is_box = False
                 return False
         return True
     
     # return the value of the continuous loss function
-    def _loss(self, A, w, P, Z, cs):
-        Aw = np.dot(A, w)
-        Ploss = np.sum(max(1 - Aw[P], 0))
-        Zloss = np.sum(min(Aw[Z], 1))
-        loss =  (Ploss + Zloss) / A.shape[1]  + cs * w
+    def _loss(self, z, w, Pindicate, Zindicate, cs):
+        zw = np.dot(z, w)
+        Ploss = np.sum(max(1 - zw[Pindicate], 0))
+        Zloss = np.sum(min(zw[Zindicate], 1))
+        loss =  (Ploss + Zloss) / self.n  + cs * w
         return loss
 
     # return a gradient as row vector
-    def _gradient(self, A, w, Pindicate, Zindicate, cs):
-        Aw = np.dot(A, w)
-        Z_AwLE1 = np.where(Aw <= 1 and Zindicate)[0]
-        P_AwGE1 = np.where(Aw >= 1 and Pindicate)[0]
-        g = (np.sum(A[Z_AwLE1], 1) - np.sum(A[P_AwGE1], 1)) / A.shape[1] + cs
+    def _gradient(self, z, w, Pindicate, Zindicate, cs):
+        zw = np.dot(z, w)
+        false_neg = np.where(zw <= 1 and Zindicate)[0]
+        false_pos = np.where(zw >= 1 and Pindicate)[0]
+        g = (np.sum(z[false_neg], 1) - np.sum(z[false_pos], 1)) / self.n + cs
         return g, w
+    
+    def _reduce_cost(self, z, w, Pindicate, Zindicate, cs):
+        zw = np.dot(z, w)
+        false_neg = np.where(zw <= 1 and Zindicate)[0]
+        false_pos = np.where(zw >= 1 and Pindicate)[0]
+        g = (np.sum(z[false_neg], 1) - np.sum(z[false_pos], 1)) / self.n 
+        return  r
 
     # gradient descent with line search
     def _line_search(self, w, g, step):
@@ -116,7 +122,9 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
 
         # Initialize with empty and singleton conjunctions, i.e. X plus all-ones feature
         # Feature indicator and conjunction matrices
+        # z: num_samples * num_rules
         z = pd.DataFrame(np.eye(X.shape[1], X.shape[1]+1, 1, dtype=int), index=X.columns)
+        # A: num_features * num_rules
         A = np.hstack((np.ones((X.shape[0],1), dtype=int), X))
 
         cs = self.lambda0 + self.lambda1 * z.sum().values
@@ -130,18 +138,21 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         # Formulate master LP
         w = np.zeros(A.shape[1])
 
+        # Compute reduced cost
+        r, w = self._reduced_cost(z, w, Pindicate, Zindicate, cs)
+
         # Beam search for conjunctions with negative reduced cost
         # Most negative reduced cost among current variables
-        UB = np.dot(g, A) + cs
+        UB = np.dot(r, A) + cs
         UB = min(UB.min(), 0)
-        v, zNew, Anew = beam_search(g, X, self.lambda0, self.lambda1,
-                                    K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
+        v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1, K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
 
         while (v < -self.eps).any() and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
             # Negative reduced costs found
             self.it += 1
+            obj = self._loss(self, z, w, Pindicate, Zindicate, cs)
             if not self.silent:
-                print('Iteration: {}, Objective: {:.4f}'.format(self.it, prob.value))
+                print('Iteration: {}, Objective: {:.4f}'.format(self.it, obj))
 
             # Add to existing conjunctions
             z = pd.concat([z, zNew], axis=1, ignore_index=True)
@@ -149,10 +160,13 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
 
             # Compute gradient
-            g, w = self._gradient(A, w, Pindicate, Zindicate, cs)
+            g, w = self._gradient(z, w, Pindicate, Zindicate)
 
-            # Extract dual variables
-            
+            # Line search based gradient descent
+            w = self._line_search(g, w)
+
+            # Compute reduced cost
+            r, w = self._reduced_cost(z, w, Pindicate, Zindicate, cs)
 
             # Beam search for conjunctions with negative reduced cost
             # Most negative reduced cost among current variables
@@ -160,11 +174,6 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             UB = min(UB.min(), 0)
             v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1, K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
 
-            # Compute gradient
-            g, w = self._gradient(A, w, Pindicate, Zindicate)
-
-            # Descent
-            w = self._line_search(g, w)
 
 
         # Save generated conjunctions and LP solution
