@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.base import BaseEstimator, ClassifierMixin
+from scipy.optimize import line_search
+
 import time
 
 from beam_search import beam_search, beam_search_K1
@@ -69,34 +71,39 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         return True
     
     # return the value of the continuous loss function
-    def _loss(self, z, w, Pindicate, Zindicate, cs):
+    def _loss(self, w, z, Pindicate, Zindicate, cs):
         zw = np.dot(z, w)
         Ploss = np.sum(max(1 - zw[Pindicate], 0))
         Zloss = np.sum(min(zw[Zindicate], 1))
         loss =  (Ploss + Zloss) / self.n  + cs * w
         return loss
 
-    # return a gradient as row vector
-    def _gradient(self, z, w, Pindicate, Zindicate, cs):
+    # return the gradient 
+    def _gradient(self, w, z, Pindicate, Zindicate, cs):
         zw = np.dot(z, w)
         false_neg = np.where(zw <= 1 and Zindicate)[0]
         false_pos = np.where(zw >= 1 and Pindicate)[0]
         g = (np.sum(z[false_neg], 1) - np.sum(z[false_pos], 1)) / self.n + cs
         return g, w
     
-    def _reduce_cost(self, z, w, Pindicate, Zindicate, cs):
+    # return the reduced cost
+    def _reduce_cost(self, w, z, Pindicate, Zindicate, cs):
         zw = np.dot(z, w)
         false_neg = np.where(zw <= 1 and Zindicate)[0]
         false_pos = np.where(zw >= 1 and Pindicate)[0]
-        g = (np.sum(z[false_neg], 1) - np.sum(z[false_pos], 1)) / self.n 
+        r = (np.sum(z[false_neg], 1) - np.sum(z[false_pos], 1)) / self.n 
         return  r
 
     # gradient descent with line search
-    def _line_search(self, w, g, step):
-        w_test = w - step * g
+    def _line_search(self, w, z, Pindicate, Zindicate, cs, old_fval=None, old_old_fval=None, c1=1e-4, c2=0.9, amax=50, amin=1e-8, xtol=1e-14):
+        g = self._gradient(w, z, Pindicate, Zindicate, cs)
+        alpha, *_ = line_search(self._loss, self._gradient, w, g, args=(z, Pindicate, Zindicate, cs), maxiter=40)
+        if alpha is None:
+            return None
+        else:
+            return np.clip(w + alpha * g, 0, 1)
 
-        return w
-
+   
     def fit(self, X, y):
         """Fit model to training data.
 
@@ -136,10 +143,10 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         self.starttime = time.time()
 
         # Formulate master LP
-        w = np.zeros(A.shape[1])
+        w = np.ones(A.shape[1]) / 2
 
         # Compute reduced cost
-        r, w = self._reduced_cost(z, w, Pindicate, Zindicate, cs)
+        r, w = self._reduced_cost(w, z, Pindicate, Zindicate, cs)
 
         # Beam search for conjunctions with negative reduced cost
         # Most negative reduced cost among current variables
@@ -150,7 +157,7 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         while (v < -self.eps).any() and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
             # Negative reduced costs found
             self.it += 1
-            obj = self._loss(self, z, w, Pindicate, Zindicate, cs)
+            obj = self._loss(self, w, z, Pindicate, Zindicate, cs)
             if not self.silent:
                 print('Iteration: {}, Objective: {:.4f}'.format(self.it, obj))
 
@@ -159,14 +166,17 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             A = np.concatenate((A, Anew), axis=1)
             cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
 
-            # Compute gradient
-            g, w = self._gradient(z, w, Pindicate, Zindicate)
 
             # Line search based gradient descent
-            w = self._line_search(g, w)
+            new_w = self._line_search(w, z, Pindicate, Zindicate, cs)
+
+            if new_w is None:
+                break
+            else:
+                w = new_w
 
             # Compute reduced cost
-            r, w = self._reduced_cost(z, w, Pindicate, Zindicate, cs)
+            r, w = self._reduced_cost(w, z, Pindicate, Zindicate, cs)
 
             # Beam search for conjunctions with negative reduced cost
             # Most negative reduced cost among current variables
