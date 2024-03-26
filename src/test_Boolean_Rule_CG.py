@@ -24,7 +24,7 @@ class TestBooleanmRuleCG(unittest.TestCase):
         self.assertEqual(len(X_train_fb.columns), 540)
         self.assertEqual(len(X_test_fb.columns), 540)
 
-        boolean_model = BooleanRuleCG(silent=True)
+        boolean_model = BooleanRuleCG(silent = False)
         explainer = BRCGExplainer(boolean_model)
         explainer.fit(X_train_fb, Y_train)
         Y_pred = explainer.predict(X_test_fb)
