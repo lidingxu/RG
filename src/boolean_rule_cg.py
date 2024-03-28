@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.base import BaseEstimator, ClassifierMixin
-from scipy.optimize import line_search
+from linesearch import line_search
 
 import time
 
@@ -71,7 +71,6 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         Ploss = np.sum(np.maximum(1 - Aw[inds_pos], 0))
         Zloss = np.sum(np.minimum(Aw[inds_neg], 1))
         loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
-        print("loss:", Ploss, Zloss, (Ploss + Zloss) / n, np.dot(cs , w))
         return loss
 
     # return the gradient 
@@ -102,15 +101,21 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
     def _line_search(self, w, A, Pindicate, Zindicate, cs, old_fval=None, old_old_fval=None, c1=1e-4, c2=0.9, amax=50, amin=1e-8, xtol=1e-14):
         g = self._gradient(w, A, Pindicate, Zindicate, cs)
         d = -g
-        amax = np.min([ ( (1- w[i]) / d[i] if d[i] > 0 else w[i] / -d[i]) if abs(d[i]) > self.eps else np.finfo(np.float64).max for i in range(w.shape[0])])
-        print("amax", amax)
-        print([self._loss(w + g* amax / (i+1), A, Pindicate, Zindicate, cs) for i in range(20)])
-        print([self._loss(w - g* amax / (i+1), A, Pindicate, Zindicate, cs) for i in range(20)])
-        alpha, *_ = line_search(self._loss, self._gradient, w, d, args=(A, Pindicate, Zindicate, cs), amax = amax, maxiter=40)
+        # clipping direction
+        fmax = np.finfo(np.float64).max
+        amax = fmax
+        for i in range(w.shape[0]):
+            if abs(d[i]) > self.eps:
+                maxi = (1- w[i]) / d[i] if d[i] > 0 else w[i] / -d[i]
+                if maxi < self.eps:
+                    d[i] = 0
+                else:
+                    amax = min(amax, maxi)
+        alpha, _ = line_search(self._loss, self._gradient, w, d, g, args=(A, Pindicate, Zindicate, cs), amax = amax, maxiter=40)
         if alpha is None:
             return None
         else:
-            return np.clip(w + alpha * g, 0, 1)
+            return w + alpha * d
 
    
     def fit(self, X, y):
@@ -153,38 +158,24 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         # Formulate master LP
         w = np.random.uniform(size = A.shape[1])
 
-        # Compute reduced cost
-        r = self._reduced_cost(w, A, Pindicate, Zindicate)
+        sufficient_descent = True
+        find_neg_cost = True
 
-        # Beam search for conjunctions with negative reduced cost
-        # Most negative reduced cost among current variables
-        UB = np.dot(r, A) + cs
-        UB = min(UB.min(), 0)
-        v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1, K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
-
-        is_descent = True
-
-        while ( (v < -self.eps).any() or is_descent) and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
+        while ( find_neg_cost or sufficient_descent) and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
             # Negative reduced costs found
             self.it += 1
             obj = self._loss(w, A, Pindicate, Zindicate, cs)
             if not self.silent:
-                print('Iteration: {}, Objective: {:.4f}'.format(self.it, obj))
-
-            # Add to existing conjunctions
-            z = pd.concat([z, zNew], axis=1, ignore_index=True)
-            A = np.concatenate((A, Anew), axis=1)
-            w = np.concatenate((w, np.zeros(Anew.shape[1])))
-            cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
+                print('Iteration: {}, Objective: {:.4f}, Find negative cost: {}, Sufficient descent {} '.format(self.it, obj, find_neg_cost, sufficient_descent))
 
             # Line search based gradient descent
             new_w = self._line_search(w, A, Pindicate, Zindicate, cs)
 
             if new_w is None:
-                is_descent = False
+                sufficient_descent = False
             else:
                 w = new_w
-                is_descent = True
+                sufficient_descent = True
 
             # Compute reduced cost
             r = self._reduced_cost(w, A, Pindicate, Zindicate)
@@ -195,6 +186,13 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             UB = min(UB.min(), 0)
             v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1, K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
 
+            # Add to existing conjunctions
+            z = pd.concat([z, zNew], axis=1, ignore_index=True)
+            A = np.concatenate((A, Anew), axis=1)
+            w = np.concatenate((w, np.zeros(Anew.shape[1])))
+            cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
+            
+            find_neg_cost =  (v < -self.eps).any()
 
         # Save generated conjunctions and LP solution
         self.z = z
