@@ -26,8 +26,8 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
         lambda0=0.001,
         lambda1=0.001,
         CNF=False,
-        iterMax=100,
-        timeMax=100,
+        iterMax=2000,
+        timeMax=200,
         K=10,
         D=10,
         B=5,
@@ -166,7 +166,7 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             self.it += 1
             obj = self._loss(w, A, Pindicate, Zindicate, cs)
             if not self.silent:
-                print('Iteration: {}, Objective: {:.4f}, Find negative cost: {}, Sufficient descent {} '.format(self.it, obj, find_neg_cost, sufficient_descent))
+                print('Iteration: {}, Objective: {:.4f}, Find negative cost: {}, Sufficient descent: {} '.format(self.it, obj, find_neg_cost, sufficient_descent))
 
             # Line search based gradient descent
             new_w = self._line_search(w, A, Pindicate, Zindicate, cs)
@@ -180,19 +180,24 @@ class BooleanRuleCG(BaseEstimator, ClassifierMixin):
             # Compute reduced cost
             r = self._reduced_cost(w, A, Pindicate, Zindicate)
 
+            if not self.silent:
+                print('Reduced cost norm: {}, number of rules: {}'.format(np.linalg.norm(r), w.shape[0]))
+
             # Beam search for conjunctions with negative reduced cost
             # Most negative reduced cost among current variables
             UB = np.dot(r, A) + cs
             UB = min(UB.min(), 0)
             v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1, K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
+            print(v.shape, zNew.shape)
 
             # Add to existing conjunctions
-            z = pd.concat([z, zNew], axis=1, ignore_index=True)
-            A = np.concatenate((A, Anew), axis=1)
-            w = np.concatenate((w, np.zeros(Anew.shape[1])))
-            cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
-            
             find_neg_cost =  (v < -self.eps).any()
+            if find_neg_cost:
+                z = pd.concat([z, zNew], axis=1, ignore_index=True)
+                A = np.concatenate((A, Anew), axis=1)
+                w = np.concatenate((w, np.zeros(Anew.shape[1])))
+                cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
+
 
         # Save generated conjunctions and LP solution
         self.z = z
