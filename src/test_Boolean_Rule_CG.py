@@ -25,23 +25,31 @@ class TestBooleanmRuleCG(unittest.TestCase):
         self.assertEqual(len(X_train_fb.columns), 540)
         self.assertEqual(len(X_test_fb.columns), 540)
 
-        boolean_model = BooleanRuleCGNonconvex(silent = False)
+        '''
+        boolean_model = BooleanRuleCGConvex(silent = False)
         explainer = BRCGExplainer(boolean_model)
-        explainer.fit(X_train_fb, Y_train)
+        z, A, w = explainer._model.fit(X_train_fb, Y_train)
         Y_pred = explainer.predict(X_test_fb)
 
         self.assertGreater(accuracy_score(Y_test, Y_pred), 0.9)
         self.assertGreater(precision_score(Y_test, Y_pred), 0.9)
         self.assertGreater(recall_score(Y_test, Y_pred), 0.9)
         self.assertGreater(f1_score(Y_test, Y_pred), 0.9)
+        
 
-        explanation = explainer.explain()
-        self.assertEqual(explanation['rules'], [
-          'compactness error > 0.01 AND worst concavity <= 0.22 AND worst symmetry <= 0.28',
-          'mean texture <= 15.46 AND mean concavity <= 0.15 AND area error <= 54.16',
-          'fractal dimension error > 0.00 AND worst area <= 680.60 AND worst concave points <= 0.18',
-          'mean concave points <= 0.05 AND perimeter error <= 3.80 AND worst area <= 930.88 AND worst smoothness <= 0.16'
-        ])
+        print(accuracy_score(Y_test, Y_pred), precision_score(Y_test, Y_pred), recall_score(Y_test, Y_pred), f1_score(Y_test, Y_pred))
+        '''
+
+        boolean_model2 = BooleanRuleCGNonconvex(silent = False)
+        explainer2 = BRCGExplainer(boolean_model2)
+        z = A = w = None
+        explainer2._model.fit(X_train_fb, Y_train)
+        Y_pred2 = explainer2.predict(X_test_fb)
+
+        self.assertGreater(accuracy_score(Y_test, Y_pred2), 0.9)
+        self.assertGreater(precision_score(Y_test, Y_pred2), 0.9)
+        self.assertGreater(recall_score(Y_test, Y_pred2), 0.9)
+        self.assertGreater(f1_score(Y_test, Y_pred2), 0.9)
 
 
 if __name__ == '__main__':

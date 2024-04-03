@@ -42,7 +42,7 @@ class BRCGExplainer(DISExplainer):
         Returns:
             BRCGExplainer: Self
         """
-        self._model.fit(X_train, Y_train, **kwargs)
+        return self._model.fit(X_train, Y_train, **kwargs)
 
     def predict(self, X, *argv, **kwargs):
         """Predict class labels.

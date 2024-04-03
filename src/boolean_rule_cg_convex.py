@@ -68,6 +68,17 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         # Silence output
         self.silent = silent
 
+    # return the value of the continuous Hamming loss function: 
+    def _loss(self, w, A, Pindicate, Zindicate, cs):
+        Aw = np.dot(A, w)
+        n =  Aw.shape[0]
+        inds_neg = np.where(Zindicate)[0]
+        inds_pos = np.where(Pindicate)[0]
+        Ploss = np.sum(np.maximum(1 - Aw[inds_pos], 0))
+        Zloss = np.sum(np.minimum(Aw[inds_neg], 1))
+        loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
+        return loss
+    
     def fit(self, X, y):
         """Fit model to training data.
 
@@ -84,8 +95,10 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
             # Flip labels for CNF
             y = 1 - y
         # Positive (y = 1) and negative (y = 0) samples
-        P = np.where(y > 0.5)[0]
-        Z = np.where(y < 0.5)[0]
+        Pindicate = y > 0.5
+        P = np.where(Pindicate)[0]
+        Zindicate = y < 0.5
+        Z = np.where(Zindicate)[0]
         nP = len(P)
         n = len(y)
 
@@ -105,9 +118,9 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         # Objective function (no penalty on empty conjunction)
         cs = self.lambda0 + self.lambda1 * z.sum().values
         cs[0] = 0
-        obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[Z,:] * w) / n + cs * w)
+        obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[Z,:] @ w) / n + cvx.sum(cs @ w))
         # Constraints
-        constraints = [xi + A[P,:] * w >= 1]
+        constraints = [xi + A[P,:] @ w >= 1]
 
         # Solve problem
         prob = cvx.Problem(obj, constraints)
@@ -129,8 +142,9 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         while (v < -self.eps).any() and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
             # Negative reduced costs found
             self.it += 1
+            real_obj = self._loss(w.value, A, Pindicate, Zindicate, cs)
             if not self.silent:
-                print('Iteration: {}, Objective: {:.4f}'.format(self.it, prob.value))
+                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, real_obj, w.value.shape[0]))
 
             # Add to existing conjunctions
             z = pd.concat([z, zNew], axis=1, ignore_index=True)
@@ -141,9 +155,9 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
             w = cvx.Variable(A.shape[1], nonneg=True)
             # Objective function
             cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
-            obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[Z,:] * w) / n + cs * w)
+            obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[Z,:] @ w) / n + cvx.sum(cs @ w))
             # Constraints
-            constraints = [xi + A[P,:] * w >= 1]
+            constraints = [xi + A[P,:] @ w >= 1]
 
             # Solve problem
             prob = cvx.Problem(obj, constraints)
@@ -168,6 +182,7 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
                                 UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)
+
 
     def compute_conjunctions(self, X):
         """Compute conjunctions of features as specified in self.z.
