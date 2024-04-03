@@ -6,7 +6,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 from features import FeatureBinarizer
-from boolean_rule_cg import BooleanRuleCG
+from boolean_rule_cg_nonconvex import BooleanRuleCGNonconvex
+from boolean_rule_cg_convex import BooleanRuleCGConvex
 from BRCG import  BRCGExplainer
 
 class TestBooleanmRuleCG(unittest.TestCase):
@@ -24,7 +25,7 @@ class TestBooleanmRuleCG(unittest.TestCase):
         self.assertEqual(len(X_train_fb.columns), 540)
         self.assertEqual(len(X_test_fb.columns), 540)
 
-        boolean_model = BooleanRuleCG(silent = False)
+        boolean_model = BooleanRuleCGNonconvex(silent = False)
         explainer = BRCGExplainer(boolean_model)
         explainer.fit(X_train_fb, Y_train)
         Y_pred = explainer.predict(X_test_fb)
