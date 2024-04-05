@@ -94,7 +94,7 @@ def main():
     result.n_features = int(len(X_train_fb.iloc[0]))
     print('n_features =', result.n_features)
 
-    avg_attrs = ["loss", "accuracy_train", "accuracy_test", "nrules", "nconditions", "time"]
+    avg_attrs = ["loss", "acc_train", "acc_test", "nrules", "nconditions", "time"]
     for attr in avg_attrs:
         lst = [getattr(foldresult, attr) for foldresult in results]
         setattr(result, attr +"_meain", gmean(lst)) 
