@@ -6,10 +6,10 @@ from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.base import BaseEstimator, ClassifierMixin
 import time
 
-from beam_search import beam_search, beam_search_K1
+from .beam_search import beam_search, beam_search_K1
 
 
-class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
+class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
     """BooleanRuleCG is a directly interpretable supervised learning method
     for binary classification that learns a Boolean rule in disjunctive
     normal form (DNF) or conjunctive normal form (CNF) using column generation (CG).
@@ -131,7 +131,6 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         # Extract dual variables
         r = np.ones_like(y, dtype=float) / n
         r[P] = -constraints[0].dual_value
-        wvalue = w.value
 
         # Beam search for conjunctions with negative reduced cost
         # Most negative reduced cost among current variables
@@ -140,21 +139,13 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1,
                                     K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
 
-        prev_obj = np.finfo(np.float64).max
-        real_obj = np.finfo(np.float64).max
-        convergence_abs = False
-        while ((v < -self.eps).any() or not convergence_abs) and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
+        while (v < -self.eps).any() and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
             # Negative reduced costs found
             self.it += 1
             real_obj = self._loss(w.value, A, Pindicate, Zindicate, cs)
-            convergence_abs = (prev_obj - real_obj) < self.eps 
-            prev_obj = real_obj
             if not self.silent:
-                print('Iteration: {}, Objective: {:.6f}, Hamming Objective: {:.6f}, Convergence: {}, Number of rules: {}'.format(self.it, prob.value, real_obj, convergence_abs, w.value.shape[0]))
+                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, real_obj, w.value.shape[0]))
 
-            Aw = np.dot(A, w.value)
-            AwL1 = Aw <= 1
-            at_neg = np.where(AwL1 & Zindicate)[0]
             # Add to existing conjunctions
             z = pd.concat([z, zNew], axis=1, ignore_index=True)
             A = np.concatenate((A, Anew), axis=1)
@@ -164,7 +155,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             w = cvx.Variable(A.shape[1], nonneg=True)
             # Objective function
             cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
-            obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[at_neg,:] @ w) / n + cvx.sum(cs @ w))
+            obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[Z,:] @ w) / n + cvx.sum(cs @ w))
             # Constraints
             constraints = [xi + A[P,:] @ w >= 1]
 
@@ -181,8 +172,6 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             UB = min(UB.min(), 0)
             v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1,
                                         K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
-            
-  
 
         # Save generated conjunctions and LP solution
         self.z = z

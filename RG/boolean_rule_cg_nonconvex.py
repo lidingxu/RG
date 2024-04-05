@@ -3,11 +3,11 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.base import BaseEstimator, ClassifierMixin
-from linesearch import line_search
+from .linesearch import line_search
 
 import time
 
-from beam_search import beam_search, beam_search_K1
+from .beam_search import beam_search, beam_search_K1
 
 
 class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
@@ -26,8 +26,8 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         lambda0=0.001,
         lambda1=0.001,
         CNF=False,
-        iterMax=7000,
-        timeMax=200,
+        iterMax=2000,
+        timeMax=100,
         K=10,
         D=10,
         B=5,
@@ -214,21 +214,9 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
             new_w = self._gradient_descent(w, A, Pindicate, Zindicate, cs)
             prev_obj = obj
             obj = self._loss(new_w, A, Pindicate, Zindicate, cs)
-            if False and prev_obj < obj:
-                w = new_w + np.random.normal(size = w.shape[0]) * self.eps
-                obj = self._loss(w, A, Pindicate, Zindicate, cs)
-                '''
-                new_w_, obj_ = self._line_search(w, A, Pindicate, Zindicate, cs)
-                if new_w_ is not None:
-                    w = new_w_
-                    obj = obj_
-                else:
-                    w = new_w
-                '''
-            else:
-                w = new_w       
-                convergence_abs = (prev_obj - obj) < self.eps 
-                generate_rule = convergence_abs
+            w = new_w       
+            convergence_abs = (prev_obj - obj) < self.eps 
+            generate_rule = convergence_abs
 
             if not self.silent:
                 print('Iteration: {}, Objective: {:.6f},, Convergence (abs.): {}, Generate rule: {},  Number of rules: {} '.format(self.it, obj, convergence_abs, generate_rule, w.shape[0]))

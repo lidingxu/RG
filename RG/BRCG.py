@@ -1,4 +1,4 @@
-from dise import DISExplainer
+from .dise import DISExplainer
 
 
 class BRCGExplainer(DISExplainer):
