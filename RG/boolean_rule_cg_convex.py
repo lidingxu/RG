@@ -142,9 +142,9 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         while (v < -self.eps).any() and (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
             # Negative reduced costs found
             self.it += 1
-            real_obj = self._loss(w.value, A, Pindicate, Zindicate, cs)
+            self.real_obj = self._loss(w.value, A, Pindicate, Zindicate, cs)
             if not self.silent:
-                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, real_obj, w.value.shape[0]))
+                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, self.real_obj, w.value.shape[0]))
 
             # Add to existing conjunctions
             z = pd.concat([z, zNew], axis=1, ignore_index=True)
@@ -258,3 +258,10 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
             'isCNF': self.CNF,
             'rules': conj
         }
+
+    def statistics(self, **kwargs):
+        """Return statistics.
+
+        """
+
+        return self.real_obj

@@ -26,7 +26,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         lambda0=0.001,
         lambda1=0.001,
         CNF=False,
-        iterMax=2000,
+        iterMax=1200,
         timeMax=100,
         K=10,
         D=10,
@@ -134,7 +134,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
     # gradient descent w
     def _gradient_descent(self, w, A, Pindicate, Zindicate, cs, old_fval=None, old_old_fval=None, c1=1e-4, c2=0.9, amax=50, amin=1e-8, xtol=1e-14):
         g = self._gradient(w, A, Pindicate, Zindicate, cs)
-        mu = 0.99
+        mu = 0.9
         tau = 0
         self.b = g if self.it == 0 else (mu * self.b + (1 - tau) * g)
         g = g + mu * self.b
@@ -167,6 +167,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         n = len(y)
         r = np.zeros(n)
 
+
         # Initialize with empty and singleton conjunctions, i.e. X plus all-ones feature
         # Feature indicator and conjunction matrices
         # z: num_features * num_rules
@@ -189,6 +190,8 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         prev_obj = np.finfo(np.float64).max
 
         generate_rule = True
+
+        self.real_obj = np.finfo(np.float64).max
 
 
         while (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
@@ -214,6 +217,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
             new_w = self._gradient_descent(w, A, Pindicate, Zindicate, cs)
             prev_obj = obj
             obj = self._loss(new_w, A, Pindicate, Zindicate, cs)
+            self.real_obj = min(self.real_obj, obj)
             w = new_w       
             convergence_abs = (prev_obj - obj) < self.eps 
             generate_rule = convergence_abs
@@ -223,9 +227,10 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
 
             self.it += 1
 
-
+        print("x2", self.silent)
         # Save generated conjunctions and LP solution
         self.z = z
+        self.wLP = w
 
         r = np.full(nP, 1./n)
         self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
@@ -309,3 +314,8 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
             'rules': conj
         }
 
+    def statistics(self, **kwargs):
+        """Return statistics.
+
+        """
+        return self.real_obj

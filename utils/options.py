@@ -33,10 +33,10 @@ parser.add_argument(
 
 
 parser.add_argument(
-    '--silent', 
-    default=True, 
-    type=bool, 
-    help='detailed log output, set to True to disable')
+    '--verbose', 
+    default=0, 
+    type=int, 
+    help='detailed log output level, set to 0 to disable')
 
 
 

@@ -67,3 +67,9 @@ class BRCGExplainer(DISExplainer):
             * rules (list): selected conjunctions formatted as strings
         """
         return self._model.explain(**kwargs)
+    
+    def statistics(self, **kwargs):
+        """Return statistics.
+
+        """
+        return self._model.statistics(**kwargs)

@@ -9,7 +9,7 @@ import os
 import numpy as np
 import pandas as pd
 import timeit
-import shelve
+import json
 import random
 from scipy.stats.mstats import gmean
 from sklearn.model_selection import KFold
@@ -27,7 +27,7 @@ from RG import *
 def main():
     global args
     
-    save_path = os.path.join(args.results_dir, args.dataset, args.model)
+    save_path = os.path.join(args.results_dir, args.dataset)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
@@ -44,8 +44,10 @@ def main():
     k = 5
     cv = KFold(n_splits=k, shuffle=True, random_state=args.seed)
 
+    np.random.seed(args.seed)
     # Result holders
 
+    print(args) 
     results = [FoldResult() for fold in range(k)]
     for fold, (train_index, test_index) in enumerate(cv.split(X_df)):
         print('fold = ', fold+1)
@@ -57,11 +59,11 @@ def main():
         X_test_fb = fb.transform(X_test)
                
         t0=timeit.default_timer()
-        
+
         if args.model == 'convex':
-            boolean_model = BooleanRuleCGConvex(silent = args.silent)
+            boolean_model = BooleanRuleCGConvex(silent = args.verbose == 0)
         else:
-            boolean_model = BooleanRuleCGNonconvex(silent = args.silent)
+            boolean_model = BooleanRuleCGNonconvex(silent = args.verbose == 0)
         explainer = BRCGExplainer(boolean_model)
         explainer.fit(X_train_fb, y_train)
 
@@ -70,6 +72,7 @@ def main():
         results[fold].time = t1-t0
         print('\tTook %0.3fs to complete the whole process' % (results[fold].time))
         
+        results[fold].loss = explainer.statistics()
         explanation = explainer.explain()
         results[fold].nrules = int(len(explanation['rules']))
         results[fold].nconditions= int(np.sum([explanation['rules'][j].count('AND')+1 for j in range(results[fold].nrules)]))
@@ -94,17 +97,20 @@ def main():
     result.n_features = int(len(X_train_fb.iloc[0]))
     print('n_features =', result.n_features)
 
+    dict_result = {}
     avg_attrs = ["loss", "acc_train", "acc_test", "nrules", "nconditions", "time"]
     for attr in avg_attrs:
         lst = [getattr(foldresult, attr) for foldresult in results]
-        setattr(result, attr +"_meain", gmean(lst)) 
-    
-    shelf = shelve.open(save_path)
-    attrs = [attr for attr in dir(result) if not callable(getattr(result, attr))]
-    for attr in attrs:
-        shelf[attr] = getattr(result, attr) 
-    shelf.close()
+        setattr(result, attr +"_mean", gmean(lst)) 
 
+    dict_result = {}
+    for attr in dir(result):
+        if not (attr.startswith('__') and attr.endswith('__')) and not callable(getattr(result, attr)):
+            dict_result[attr] =  getattr(result, attr) 
+    json_str = json.dumps(dict_result, indent=4)
+    print(os.path.join(save_path, str(args.model) +".json"))
+    with open(os.path.join(save_path, str(args.model) +".json"), "w") as json_file:
+        json_file.write(json_str)
 
 if __name__ == '__main__':
     main()

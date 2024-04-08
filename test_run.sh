@@ -1,6 +1,6 @@
 python -u main.py \
---model convex \
---results_dir result \
+--model nonconvex \
+--results_dir results \
 --dataset Ionosphere \
---silent True \
+--verbose 1 \
 --seed 10
