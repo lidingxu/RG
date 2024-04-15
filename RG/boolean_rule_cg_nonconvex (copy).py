@@ -202,18 +202,46 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
 
         stop_obj = np.finfo(np.float64).max
         #stop_objs.fill(np.finfo(np.float64).max)
-        avgw = np.copy(w)
+        
+        res = optimize.minimize(self._loss, w, args=(A, Pindicate, Zindicate, cs), method = "L-BFGS-B", jac = self._gradient, bounds =  optimize.Bounds(np.zeros(A.shape[1]), np.ones(A.shape[1])), tol = self.eps)
+        #w = res.x
+        is_custom = False
+        convex = False
         while (self.it < self.iterMax) and (self.itGD < self.iterGDMax) and (time.time()-self.starttime < self.timeMax):
-            w, _ = self._gradient_descent(w, A, Pindicate, Zindicate, cs)
-            obj = self._loss(w, A, Pindicate, Zindicate, cs)
-            func_converge = abs(obj - prev_obj) < self.eps * (1 + prev_obj)
-            restrict_converge = func_converge # and optimal_converge # and step_converge # (prev_obj - obj) < self.eps
-            self.itGD += 1
+            if not is_custom:
+                if convex:
+                    wLP = cvx.Variable(A.shape[1], nonneg=True)
+                    xi = cvx.Variable(nP, nonneg=True)
+                    # Objective function (no penalty on empty conjunction)
+                    cs = self.lambda0 + self.lambda1 * z.sum().values
+                    cs[0] = 0
+                    obj = cvx.Minimize(cvx.sum(xi) / n + cvx.sum(A[Z,:] @ wLP) / n + cvx.sum(cs @ wLP))
+                    # Constraints
+                    constraints = [xi + A[P,:] @ wLP >= 1]
+                    # Solve problem
+                    prob = cvx.Problem(obj, constraints)
+                    prob.solve(solver='ECOS', verbose=False)
+                    w = wLP.value
+                    obj = self._loss(w, A, Pindicate, Zindicate, cs)
+                    restrict_converge = True      
+                else:
+                    res = optimize.minimize(self._loss, w, args=(A, Pindicate, Zindicate, cs), method = "L-BFGS-B", jac = self._gradient, bounds =  optimize.Bounds(np.zeros(A.shape[1]), np.ones(A.shape[1])), tol = self.eps)
+                    if res.success:
+                        w = res.x
+                        print(res.fun)    
+                        obj = self._loss(w, A, Pindicate, Zindicate, cs)
+                    restrict_converge = True       
+            else:
+                w, _ = self._gradient_descent(w, A, Pindicate, Zindicate, cs)
+                obj = self._loss(w, A, Pindicate, Zindicate, cs)
+                func_converge = abs(obj - prev_obj) < self.eps * (1 + prev_obj)
+                restrict_converge = func_converge # and optimal_converge # and step_converge # (prev_obj - obj) < self.eps
+                self.itGD += 1
 
-            avgw += (w - avgw) / (self.itGD)
             self.real_obj = min(self.real_obj, obj)   
 
             # relative function tolerance
+            #print(abs(obj - np.mean(conv_objs)), np.var(conv_objs))
             generate_rule = restrict_converge
 
             prev_obj = obj
@@ -234,21 +262,27 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                     z = pd.concat([z, zNew], axis=1, ignore_index=True)
                     A = np.concatenate((A, Anew), axis=1)
                     w = np.concatenate((w, np.zeros(Anew.shape[1])))
-                    avgw = np.concatenate((avgw, np.zeros(Anew.shape[1])))
-                    self.b = np.concatenate((self.b, np.zeros(Anew.shape[1])))
+                    if is_custom:
+                        self.b = np.concatenate((self.b, np.zeros(Anew.shape[1])))
                     cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
                 self.it += 1
 
                 if not self.silent:
                     print('Iteration: {}, Objective: {:.6f}, Convergence (abs.): {}, Generate rule: {},  Number of rules: {} '.format(self.it, obj, restrict_converge, generate_rule, w.shape[0]))            
 
+
             stop = False
             if restrict_converge:
-                stop = abs(obj - stop_obj) < self.eps * (1 + obj)
+                stop = abs(obj - stop_obj) < self.eps * (1 + stop_obj) if not is_custom else obj - stop_obj > self.eps * (1 + stop_obj)
                 stop_obj = obj  
 
             if restrict_converge and not find_rule and stop:
-                break
+                if not is_custom:
+                    break
+                    is_custom = True
+                    self.b = self._gradient(w, A, Pindicate, Zindicate, cs)
+                else:
+                    break
             
 
         # Save generated conjunctions and LP solution

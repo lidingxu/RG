@@ -1,0 +1,12 @@
+{
+    "acc_test_mean": 0.6386167473862667,
+    "acc_train_mean": 0.6386449353897425,
+    "dataset": "Adult",
+    "loss_mean": 1.7976931348622732e+308,
+    "model": "nonconvex",
+    "n_features": 262,
+    "n_samples": 47621,
+    "nconditions_mean": 2.0,
+    "nrules_mean": 2.0,
+    "time_mean": 122.36517576543035
+}

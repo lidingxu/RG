@@ -79,7 +79,7 @@ class FeatureBinarizer(TransformerMixin):
             # Categorical column
             elif (c in self.colCateg) or (data[c].dtype == 'object'):
                 # OneHotEncoder object
-                enc[c] = OneHotEncoder(sparse=False, dtype=int, handle_unknown='ignore')
+                enc[c] = OneHotEncoder(sparse_output=False, dtype=int, handle_unknown='ignore')
                 # Fit to observed categories
                 enc[c].fit(data[[c]])
 
@@ -340,7 +340,7 @@ class FeatureBinarizerFromTrees(TransformerMixin):
                 if X[[c]].isna().any()[0]:
                     raise ValueError('Categorical input contains NaN.')
                 # OneHotEncoder object
-                enc[c] = OneHotEncoder(sparse=False, dtype=int, handle_unknown='ignore')
+                enc[c] = OneHotEncoder(sparse_output=False, dtype=int, handle_unknown='ignore')
                 # Fit to observed categories
                 enc[c].fit(X[[c]])
                 # Apply OneHotEncoder

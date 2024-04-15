@@ -2,7 +2,7 @@
 """
 Created on Wed Apr  3 14:08:28 2024
 
-@author: crist
+@author: Liding Xu
 """
 
 import os
@@ -46,7 +46,7 @@ def main():
 
     np.random.seed(args.seed)
     # Result holders
-
+    
     print(args) 
     results = [FoldResult() for fold in range(k)]
     for fold, (train_index, test_index) in enumerate(cv.split(X_df)):
@@ -61,9 +61,11 @@ def main():
         t0=timeit.default_timer()
 
         if args.model == 'convex':
-            boolean_model = BooleanRuleCGConvex(silent = args.verbose == 0)
-        else:
-            boolean_model = BooleanRuleCGNonconvex(silent = args.verbose == 0)
+            boolean_model = BooleanRuleCGConvex(lambda0 = args.lambda0, lambda1 = args.lambda1, silent = args.verbose == 0)
+        elif args.model == 'nonconvex':
+            boolean_model = BooleanRuleCGNonconvex(lambda0 = args.lambda0, lambda1 = args.lambda1, silent = args.verbose == 0)
+        elif args.model == 'dc':
+            boolean_model = BooleanRuleCGDC(lambda0 = args.lambda0, lambda1 = args.lambda1, silent = args.verbose == 0)
         explainer = BRCGExplainer(boolean_model)
         explainer.fit(X_train_fb, y_train)
 
@@ -92,6 +94,8 @@ def main():
     result = TestRunResult()
     result.model = args.model
     result.dataset = args.dataset
+    result.lambda0 = args.lambda0
+    result.lambda1 = args.lambda1
     result.n_samples = int(len(X_train_fb) + len(X_test_fb))
     print('n_samples =', result.n_samples)
     result.n_features = int(len(X_train_fb.iloc[0]))
@@ -108,8 +112,9 @@ def main():
         if not (attr.startswith('__') and attr.endswith('__')) and not callable(getattr(result, attr)):
             dict_result[attr] =  getattr(result, attr) 
     json_str = json.dumps(dict_result, indent=4)
-    print(os.path.join(save_path, str(args.model) +".json"))
-    with open(os.path.join(save_path, str(args.model) +".json"), "w") as json_file:
+    save_file=os.path.join(save_path, str(args.model) + "_" + str(args.lambda0) +  "_" + str(args.lambda1) + ".json")
+    print(save_file)
+    with open(save_file, "w") as json_file:
         json_file.write(json_str)
 
 if __name__ == '__main__':

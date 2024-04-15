@@ -1,0 +1,12 @@
+{
+    "acc_test_mean": 0.9252033129575968,
+    "acc_train_mean": 0.9252286577548916,
+    "dataset": "Mushroom",
+    "loss_mean": 0.36462109507767276,
+    "model": "dc",
+    "n_features": 184,
+    "n_samples": 5644,
+    "nconditions_mean": 3.0000000000000004,
+    "nrules_mean": 3.0000000000000004,
+    "time_mean": 11.252703603591954
+}

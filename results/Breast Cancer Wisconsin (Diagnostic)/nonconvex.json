@@ -1,0 +1,12 @@
+{
+    "acc_test_mean": 0.9594637535802178,
+    "acc_train_mean": 0.9911989800876695,
+    "dataset": "Breast Cancer Wisconsin (Diagnostic)",
+    "loss_mean": 0.027225792464663726,
+    "model": "nonconvex",
+    "n_features": 540,
+    "n_samples": 569,
+    "nconditions_mean": 13.904837512977918,
+    "nrules_mean": 4.781762498950184,
+    "time_mean": 10.655153453003724
+}

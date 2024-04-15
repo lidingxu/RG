@@ -1,18 +1,15 @@
 import os
 import numpy as np
 import pandas as pd
+import cvxpy as cvx
 from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.base import BaseEstimator, ClassifierMixin
-from .linesearch import line_search
-from scipy import optimize 
-import cvxpy as cvx
-
 import time
 
 from .beam_search import beam_search, beam_search_K1
 
 
-class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
+class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
     """BooleanRuleCG is a directly interpretable supervised learning method
     for binary classification that learns a Boolean rule in disjunctive
     normal form (DNF) or conjunctive normal form (CNF) using column generation (CG).
@@ -28,13 +25,14 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         lambda0=0.001,
         lambda1=0.001,
         CNF=False,
-        iterMax=150,
-        iterGDMax=10000,
+        iterMax=15,
         timeMax=100,
         K=10,
         D=10,
         B=5,
         eps=1e-6,
+        solver='ECOS',
+        verbose=False,
         silent=False):
         """
         Args:
@@ -47,6 +45,8 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
             D (int, optional): Column generation - maximum degree
             B (int, optional): Column generation - beam search width
             eps (float, optional): Numerical tolerance on comparisons
+            solver (str, optional): Linear programming - solver
+            verbose (bool, optional): Linear programming - verboseness
             silent (bool, optional): Silence overall algorithm messages
         """
         # Complexity parameters
@@ -56,17 +56,19 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         self.CNF = CNF
         # Column generation parameters
         self.iterMax = iterMax      # maximum number of iterations
-        self.iterGDMax = iterGDMax  # maximum number of gradient descent iterations
         self.timeMax = timeMax      # maximum runtime in seconds
         self.K = K                  # maximum number of columns generated per iteration
         self.D = D                  # maximum degree
         self.B = B                  # beam search width
         # Numerical tolerance on comparisons
         self.eps = eps
+        # Linear programming parameters
+        self.solver = solver        # solver
+        self.verbose = verbose      # verboseness
         # Silence output
         self.silent = silent
-    
-    # return the value of the continuous loss function: 
+
+    # return the value of the continuous Hamming loss function: 
     def _loss(self, w, A, Pindicate, Zindicate, cs):
         Aw = np.dot(A, w)
         n =  Aw.shape[0]
@@ -74,18 +76,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         Zloss = np.sum(np.minimum(Aw[Zindicate], 1))
         loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
         return loss
-
-    # return the gradient 
-    def _gradient(self, w, A, Pindicate, Zindicate, cs):
-        Aw = np.dot(A, w)
-        AwL1 = Aw <= 1
-        n =  Aw.shape[0]
-        at_pos = np.where( AwL1 & Pindicate)[0]
-        at_neg = np.where( AwL1 & Zindicate)[0]
-        g = (-np.sum(A[at_pos], 0) + np.sum(A[at_neg], 0)) / n  + cs
-        return g
-    
-    # return the reduced cost
+        
     def _reduced_cost(self, w, r, A, Pindicate, Zindicate):
         Aw = np.dot(A, w)
         AwL1 = Aw <= 1
@@ -97,59 +88,10 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         r[at_neg] += 1
         r /= n
         return  r
-
-    # gradient descent with line search
-    def _line_search(self, w, A, Pindicate, Zindicate, cs, old_fval=None, old_old_fval=None, c1=1e-4, c2=0.9, amax=50, amin=1e-8, xtol=1e-14):
-        g = self._gradient(w, A, Pindicate, Zindicate, cs)
-        d = -g
-        # clipping direction
-        fmax = np.finfo(np.float64).max
-        amax = fmax
-        for i in range(w.shape[0]):
-            if abs(d[i]) > self.eps:
-                maxi = (1- w[i]) / d[i] if d[i] > 0 else w[i] / -d[i]
-                if maxi < self.eps:
-                    d[i] = 0
-                else:
-                    amax = min(amax, maxi)
-        alpha, falpha = line_search(self._loss, self._gradient, w, d, g, args=(A, Pindicate, Zindicate, cs), amax = amax, maxiter=20)
-        if alpha is None:
-            return None, None
-        else:
-            return w + alpha * d, falpha
-
-    # gradient descent with Frankwolfe
-    def _frankwolfe(self, w, A, Pindicate, Zindicate, cs, old_fval=None, old_old_fval=None, c1=1e-4, c2=0.9, amax=50, amin=1e-8, xtol=1e-14):
-        g = self._gradient(w, A, Pindicate, Zindicate, cs)
-        d = -g
-        # clipping direction
-        fmax = np.finfo(np.float64).max
-        amax = fmax
-        for i in range(w.shape[0]):
-            if abs(d[i]) > self.eps:
-                maxi = (1- w[i]) / d[i] if d[i] > 0 else w[i] / -d[i]
-                if maxi < self.eps:
-                    d[i] = 0
-                else:
-                    amax = min(amax, maxi)
-        alpha = amax
-        return w + alpha * d
     
-    # gradient descent w
-    def _gradient_descent(self, w, A, Pindicate, Zindicate, cs, old_fval=None, old_old_fval=None, c1=1e-4, c2=0.9, amax=50, amin=1e-8, xtol=1e-14):
-        g = self._gradient(w, A, Pindicate, Zindicate, cs)
-        mu = 0.9
-        tau = 0.1
-        self.b = g if self.it == 0 else (mu * self.b + (1 - tau) * g)
-        g = g + mu * self.b
-        # clipping direction
-        alpha_max = 1e-1
-        alpha_min = 1e-4
-        alpha = alpha_min + (alpha_max - alpha_min) * (1 + np.cos( (self.it / self.iterMax) * np.pi) ) /2
-        return np.clip(w - alpha * g, 0, 1), g
-   
     def fit(self, X, y):
         """Fit model to training data.
+
         Args:
             X (DataFrame): Binarized features with MultiIndex column labels
             y (array): Binary-valued target variable
@@ -171,94 +113,75 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         n = len(y)
         r = np.zeros(n)
 
-
         # Initialize with empty and singleton conjunctions, i.e. X plus all-ones feature
         # Feature indicator and conjunction matrices
-        # z: num_features * num_rules
-        z = pd.DataFrame(np.eye(X.shape[1], X.shape[1]+1, 1, dtype=int), index=X.columns) 
-        # A: num_samples * num_rules
+        z = pd.DataFrame(np.eye(X.shape[1], X.shape[1]+1, 1, dtype=int), index=X.columns)
         A = np.hstack((np.ones((X.shape[0],1), dtype=int), X))
-
         cs = self.lambda0 + self.lambda1 * z.sum().values
         cs[0] = 0
-
         # Iteration counter
         self.it = 0
-        self.itGD = 0
         # Start time
         self.starttime = time.time()
 
-        # Formulate master LP
-        w = np.random.uniform(size = A.shape[1])
+        xi = cvx.Variable(nP, nonneg=True)
+        
+        wLP = np.zeros(A.shape[1])
+        Aw = np.dot(A, wLP)
+        at_neg = np.where( Aw <= 1 & Zindicate)[0]
+        notat_neg = np.where(Aw > 1 & Zindicate)[0]
+        while (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
+            # Reformulate master LP
+            # Variables
+            w = cvx.Variable(A.shape[1], nonneg=True)
+            # Objective function
+            obj = cvx.Minimize(cvx.sum(xi) / n + (cvx.sum(A[at_neg,:] @ w if len(at_neg) != 0 else 0) + len(notat_neg)) / n + cvx.sum(cs @ w))
+            # Constraints
+            constraints = [xi + A[P,:] @ w >= 1]
 
-        obj = self._loss(w, A, Pindicate, Zindicate, cs)
-        prev_obj = np.finfo(np.float64).max
+            # Solve problem
+            prob = cvx.Problem(obj, constraints)
+            prob.solve(solver=self.solver, verbose=self.verbose)
 
-        generate_rule = True
-
-        self.real_obj = np.finfo(np.float64).max
-
-        prev_obj =  np.finfo(np.float64).max
-
-        stop_obj = np.finfo(np.float64).max
-        #stop_objs.fill(np.finfo(np.float64).max)
-        avgw = np.copy(w)
-        while (self.it < self.iterMax) and (self.itGD < self.iterGDMax) and (time.time()-self.starttime < self.timeMax):
-            w, _ = self._gradient_descent(w, A, Pindicate, Zindicate, cs)
-            obj = self._loss(w, A, Pindicate, Zindicate, cs)
-            func_converge = abs(obj - prev_obj) < self.eps * (1 + prev_obj)
-            restrict_converge = func_converge # and optimal_converge # and step_converge # (prev_obj - obj) < self.eps
-            self.itGD += 1
-
-            avgw += (w - avgw) / (self.itGD)
-            self.real_obj = min(self.real_obj, obj)   
-
-            # relative function tolerance
-            generate_rule = restrict_converge
-
-            prev_obj = obj
-
-            find_rule = False
-            if generate_rule:
-                # Compute reduced cost
-                r = self._reduced_cost(w, r, A, Pindicate, Zindicate)
-                # Beam search for conjunctions with negative reduced cost
-                # Most negative reduced cost among current variables
-                UB = np.dot(r, A) + cs
-                UB = min(UB.min(), 0)
-                v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1, K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
-
-                find_rule = (v < -self.eps).any()
-                # Add to existing conjunctions
-                if find_rule:
-                    z = pd.concat([z, zNew], axis=1, ignore_index=True)
-                    A = np.concatenate((A, Anew), axis=1)
-                    w = np.concatenate((w, np.zeros(Anew.shape[1])))
-                    avgw = np.concatenate((avgw, np.zeros(Anew.shape[1])))
-                    self.b = np.concatenate((self.b, np.zeros(Anew.shape[1])))
-                    cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
-                self.it += 1
-
-                if not self.silent:
-                    print('Iteration: {}, Objective: {:.6f}, Convergence (abs.): {}, Generate rule: {},  Number of rules: {} '.format(self.it, obj, restrict_converge, generate_rule, w.shape[0]))            
-
-            stop = False
-            if restrict_converge:
-                stop = abs(obj - stop_obj) < self.eps * (1 + obj)
-                stop_obj = obj  
-
-            if restrict_converge and not find_rule and stop:
-                break
+            wLP = wLP + 2 / (2 + self.it) * (w.value - wLP)
             
+            # Extract dual variables
+            r = self._reduced_cost(wLP, r, A, Pindicate, Zindicate)
+            
+            # Beam search for conjunctions with negative reduced cost
+            # Most negative reduced cost among current variables
+            UB = np.dot(r, A) + cs
+            UB = min(UB.min(), 0)
+            v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1,
+                                        K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
+            
+            # Add to existing conjunctions
+            z = pd.concat([z, zNew], axis=1, ignore_index=True)
+            A = np.concatenate((A, Anew), axis=1)
+            wLP = np.concatenate((wLP, np.zeros(Anew.shape[1])), axis=0)
+            cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
+ 
+            find_rule = (v < -self.eps).any()
+
+            #print(z.shape, A.shape, wLP.shape, cs.shape)
+            Aw = np.dot(A, wLP)
+            at_neg = np.where( Aw <= 1 & Zindicate)[0]
+            notat_neg = np.where(Aw > 1 & Zindicate)[0]
+
+            # Negative reduced costs found
+            self.real_obj = self._loss(wLP, A, Pindicate, Zindicate, cs)
+            if not self.silent:
+                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, self.real_obj, w.value.shape[0]))
+
+            self.it += 1
 
         # Save generated conjunctions and LP solution
         self.z = z
-        self.wLP = w
+        self.wLP = w.value
 
         r = np.full(nP, 1./n)
         self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
                                 UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
-
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)
 
@@ -342,4 +265,5 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         """Return statistics.
 
         """
+
         return self.real_obj

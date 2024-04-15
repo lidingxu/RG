@@ -38,6 +38,17 @@ parser.add_argument(
     type=int, 
     help='detailed log output level, set to 0 to disable')
 
+parser.add_argument(
+    '--lambda0',
+    default=0.001, 
+    type=float, 
+    help='lambda0')
+
+parser.add_argument(
+    '--lambda1',
+    default=0.001, 
+    type=float, 
+    help='lambda1')
 
 
 args = parser.parse_args()

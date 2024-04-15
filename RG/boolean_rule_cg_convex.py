@@ -72,10 +72,8 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
     def _loss(self, w, A, Pindicate, Zindicate, cs):
         Aw = np.dot(A, w)
         n =  Aw.shape[0]
-        inds_neg = np.where(Zindicate)[0]
-        inds_pos = np.where(Pindicate)[0]
-        Ploss = np.sum(np.maximum(1 - Aw[inds_pos], 0))
-        Zloss = np.sum(np.minimum(Aw[inds_neg], 1))
+        Ploss = np.sum(np.maximum(1 - Aw[Pindicate], 0))
+        Zloss = np.sum(np.minimum(Aw[Zindicate], 1))
         loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
         return loss
     
