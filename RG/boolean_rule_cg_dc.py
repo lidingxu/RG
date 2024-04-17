@@ -145,6 +145,9 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
 
             wLP = wLP + 2 / (2 + self.it) * (w.value - wLP)
             
+            
+            self.real_obj = self._loss(wLP, A, Pindicate, Zindicate, cs)
+            
             # Extract dual variables
             r = self._reduced_cost(wLP, r, A, Pindicate, Zindicate)
             
@@ -169,7 +172,6 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             notat_neg = np.where(Aw > 1 & Zindicate)[0]
 
             # Negative reduced costs found
-            self.real_obj = self._loss(wLP, A, Pindicate, Zindicate, cs)
             if not self.silent:
                 print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, self.real_obj, w.value.shape[0]))
 

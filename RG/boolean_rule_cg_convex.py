@@ -125,6 +125,8 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         prob.solve(solver=self.solver, verbose=self.verbose)
         if not self.silent:
             print('Initial LP solved')
+            
+        self.real_obj = self._loss(w.value, A, Pindicate, Zindicate, cs)
 
         # Extract dual variables
         r = np.ones_like(y, dtype=float) / n
