@@ -123,6 +123,7 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         # Solve problem
         prob = cvx.Problem(obj, constraints)
         prob.solve(solver=self.solver, verbose=self.verbose)
+        print("xxx")
         if not self.silent:
             print('Initial LP solved')
             

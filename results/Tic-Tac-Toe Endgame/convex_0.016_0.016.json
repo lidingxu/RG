@@ -1,0 +1,14 @@
+{
+    "acc_test_mean": 0.7065104017566116,
+    "acc_train_mean": 0.7293022531256622,
+    "dataset": "Tic-Tac-Toe Endgame",
+    "lambda0": 0.016,
+    "lambda1": 0.016,
+    "loss_mean": 0.32668647883192675,
+    "model": "convex",
+    "n_features": 54,
+    "n_samples": 958,
+    "nconditions_mean": 1.6437518295172258,
+    "nrules_mean": 1.148698354997035,
+    "time_mean": 0.22303173544155483
+}
