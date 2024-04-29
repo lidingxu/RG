@@ -1,5 +1,5 @@
 python3 -u main.py \
---model convex \
+--model dc \
 --results_dir results \
 --dataset 'Ionosphere' \
 --verbose 1 \

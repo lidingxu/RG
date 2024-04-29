@@ -25,7 +25,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         lambda0=0.001,
         lambda1=0.001,
         CNF=False,
-        iterMax=15,
+        iterMax=50,
         timeMax=100,
         K=10,
         D=10,
@@ -130,6 +130,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         Aw = np.dot(A, wLP)
         at_neg = np.where( Aw <= 1 & Zindicate)[0]
         notat_neg = np.where(Aw > 1 & Zindicate)[0]
+
         while (self.it < self.iterMax) and (time.time()-self.starttime < self.timeMax):
             # Reformulate master LP
             # Variables
@@ -143,37 +144,40 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             prob = cvx.Problem(obj, constraints)
             prob.solve(solver=self.solver, verbose=self.verbose)
 
-            wLP = wLP + 2 / (2 + self.it) * (w.value - wLP)
-            
-            
+            #wLP = wLP + 2 / (2 + self.it) * (w.value - wLP)
+            converge = np.linalg.norm(wLP -  w.value) < self.eps * np.linalg.norm(wLP) 
+            wLP = w.value
             self.real_obj = self._loss(wLP, A, Pindicate, Zindicate, cs)
             
-            # Extract dual variables
-            r = self._reduced_cost(wLP, r, A, Pindicate, Zindicate)
-            
-            # Beam search for conjunctions with negative reduced cost
-            # Most negative reduced cost among current variables
-            UB = np.dot(r, A) + cs
-            UB = min(UB.min(), 0)
-            v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1,
-                                        K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
-            
-            # Add to existing conjunctions
-            z = pd.concat([z, zNew], axis=1, ignore_index=True)
-            A = np.concatenate((A, Anew), axis=1)
-            wLP = np.concatenate((wLP, np.zeros(Anew.shape[1])), axis=0)
-            cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
- 
-            find_rule = (v < -self.eps).any()
+            # Negative reduced costs found
+            if not self.silent:
+                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, self.real_obj, w.value.shape[0]))
+
+            if converge:
+                # Extract dual variables
+                r = self._reduced_cost(wLP, r, A, Pindicate, Zindicate)
+                
+                # Beam search for conjunctions with negative reduced cost
+                # Most negative reduced cost among current variables
+                UB = np.dot(r, A) + cs
+                UB = min(UB.min(), 0)
+                v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1,
+                                            K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
+                
+                # Add to existing conjunctions
+                z = pd.concat([z, zNew], axis=1, ignore_index=True)
+                A = np.concatenate((A, Anew), axis=1)
+                wLP = np.concatenate((wLP, np.zeros(Anew.shape[1])), axis=0)
+                cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
+    
+                find_rule = (v < -self.eps).any()
+                if not find_rule:
+                    break
 
             #print(z.shape, A.shape, wLP.shape, cs.shape)
             Aw = np.dot(A, wLP)
             at_neg = np.where( Aw <= 1 & Zindicate)[0]
             notat_neg = np.where(Aw > 1 & Zindicate)[0]
-
-            # Negative reduced costs found
-            if not self.silent:
-                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, self.real_obj, w.value.shape[0]))
 
             self.it += 1
 
