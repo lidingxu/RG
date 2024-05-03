@@ -16,6 +16,7 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import accuracy_score
 from ucimlrepo import fetch_ucirepo
 # from ucimlrepo import list_available_datasets
+from sklearn.model_selection import train_test_split
 
 from utils import *
 from RG import *
@@ -54,8 +55,10 @@ def main():
         print('-------------------')
         X_train, X_test = X_df.iloc[train_index], X_df.iloc[test_index]
         y_train, y_test = y[train_index], y[test_index]
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25, random_state=0)
         fb = FeatureBinarizer(negations=True)
         X_train_fb = fb.fit_transform(X_train)
+        X_val_fb = fb.transform(X_val)
         X_test_fb = fb.transform(X_test)
                
         t0=timeit.default_timer()
