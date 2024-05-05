@@ -32,6 +32,10 @@ def main():
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
+    save_log_path = os.path.join(args.logs_dir, args.dataset)
+    if not os.path.exists(save_log_path):
+        os.makedirs(save_log_path)
+
     # Read data
     dataset = fetch_ucirepo(name = args.dataset)  
     X = dataset.data.features
@@ -50,12 +54,13 @@ def main():
     
     print(args) 
     results = [FoldResult() for fold in range(k)]
+    logs = {}
     for fold, (train_index, test_index) in enumerate(cv.split(X_df)):
         print('fold = ', fold+1)
         print('-------------------')
         X_train, X_test = X_df.iloc[train_index], X_df.iloc[test_index]
         y_train, y_test = y[train_index], y[test_index]
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25, random_state=0)
+        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25, random_state=args.seed)
         fb = FeatureBinarizer(negations=True)
         X_train_fb = fb.fit_transform(X_train)
         X_val_fb = fb.transform(X_val)
@@ -70,14 +75,15 @@ def main():
         elif args.model == 'dc':
             boolean_model = BooleanRuleCGDC(lambda0 = args.lambda0, lambda1 = args.lambda1, verbose = args.verbose > 1, silent = args.verbose == 0)
         explainer = BRCGExplainer(boolean_model)
-        explainer.fit(X_train_fb, y_train)
+        explainer.fit(X_train_fb, y_train, X_val_fb, y_val)
 
         t1=timeit.default_timer()
 
         results[fold].time = t1-t0
         print('\tTook %0.3fs to complete the whole process' % (results[fold].time))
         
-        results[fold].loss = explainer.statistics()
+        results[fold].loss, fold_logs = explainer.statistics()
+        logs[fold] = fold_logs
         explanation = explainer.explain()
         results[fold].nrules = int(len(explanation['rules']))
         results[fold].nconditions= int(np.sum([explanation['rules'][j].count('AND')+1 for j in range(results[fold].nrules)]))
@@ -119,6 +125,12 @@ def main():
     print(save_file)
     with open(save_file, "w") as json_file:
         json_file.write(json_str)
+
+    json_log_str = json.dumps(logs, indent=4)
+    save_log_file= os.path.join(save_log_path, str(args.model) + "_" + str(args.lambda0) +  "_" + str(args.lambda1) + ".json")
+    print(save_log_file)
+    with open(save_log_file, "w") as json_file:
+        json_file.write(json_log_str)
 
 if __name__ == '__main__':
     main()

@@ -74,6 +74,15 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         Zloss = np.sum(np.minimum(Aw[Zindicate], 1))
         loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
         return loss
+    
+    # return the value of the continuous validation loss function: 
+    def _loss_val(self, w, A_val, Pindicate_val, Zindicate_val):
+        Aw = np.dot(A_val, w)
+        n =  Aw.shape[0]
+        Ploss = np.sum(np.maximum(1 - Aw[Pindicate_val], 0))
+        Zloss = np.sum(np.minimum(Aw[Zindicate_val], 1))
+        loss =  (Ploss + Zloss) / n 
+        return loss
 
     # return the gradient 
     def _gradient(self, w, A, Pindicate, Zindicate, cs):
@@ -118,23 +127,6 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         else:
             return w + alpha * d, falpha
 
-    # gradient descent with Frankwolfe
-    def _frankwolfe(self, w, A, Pindicate, Zindicate, cs, old_fval=None, old_old_fval=None, c1=1e-4, c2=0.9, amax=50, amin=1e-8, xtol=1e-14):
-        g = self._gradient(w, A, Pindicate, Zindicate, cs)
-        d = -g
-        # clipping direction
-        fmax = np.finfo(np.float64).max
-        amax = fmax
-        for i in range(w.shape[0]):
-            if abs(d[i]) > self.eps:
-                maxi = (1- w[i]) / d[i] if d[i] > 0 else w[i] / -d[i]
-                if maxi < self.eps:
-                    d[i] = 0
-                else:
-                    amax = min(amax, maxi)
-        alpha = amax
-        return w + alpha * d
-    
     # gradient descent w
     def _gradient_descent(self, w, A, Pindicate, Zindicate, cs, old_fval=None, old_old_fval=None, c1=1e-4, c2=0.9, amax=50, amin=1e-8, xtol=1e-14):
         g = self._gradient(w, A, Pindicate, Zindicate, cs)
@@ -148,7 +140,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         alpha = alpha_min + (alpha_max - alpha_min) * (1 + np.cos( (self.it / self.iterMax) * np.pi) ) /2
         return np.clip(w - alpha * g, 0, 1), g
    
-    def fit(self, X, y):
+    def fit(self, X, y, X_val, y_val):
         """Fit model to training data.
         Args:
             X (DataFrame): Binarized features with MultiIndex column labels
@@ -171,13 +163,30 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         n = len(y)
         r = np.zeros(n)
 
-
         # Initialize with empty and singleton conjunctions, i.e. X plus all-ones feature
         # Feature indicator and conjunction matrices
         # z: num_features * num_rules
         z = pd.DataFrame(np.eye(X.shape[1], X.shape[1]+1, 1, dtype=int), index=X.columns) 
         # A: num_samples * num_rules
         A = np.hstack((np.ones((X.shape[0],1), dtype=int), X))
+
+        if X_val.empty and y_val.empty:
+            self.use_val = False
+        else:
+            self.use_val = True
+
+        if self.use_val:
+            Pindicate_val = y_val > 0.5
+            P_val = np.where(Pindicate_val)[0]
+            Zindicate_val = y_val < 0.5
+            Z_val = np.where(Zindicate_val)[0]
+            nP_val = len(P_val)
+            n_val = len(y_val) 
+            A_val = np.hstack((np.ones((X_val.shape[0],1), dtype=int), X_val))
+        self.logs = {}
+        self.logs["regobjs_train"] = []
+        self.logs["objs_val"] = []
+        self.logs["conv_points"] = []
 
         cs = self.lambda0 + self.lambda1 * z.sum().values
         cs[0] = 0
@@ -192,20 +201,20 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         w = np.random.uniform(size = A.shape[1])
 
         obj = self._loss(w, A, Pindicate, Zindicate, cs)
+        if self.use_val:
+            obj_val = self._loss_val(w, A_val, Pindicate_val, Zindicate_val)
+
         prev_obj = np.finfo(np.float64).max
-
         generate_rule = True
-
         self.real_obj = np.finfo(np.float64).max
-
-        prev_obj =  np.finfo(np.float64).max
-
         stop_obj = np.finfo(np.float64).max
         #stop_objs.fill(np.finfo(np.float64).max)
         avgw = np.copy(w)
         while (self.it < self.iterMax) and (self.itGD < self.iterGDMax) and (time.time()-self.starttime < self.timeMax):
             w, _ = self._gradient_descent(w, A, Pindicate, Zindicate, cs)
             obj = self._loss(w, A, Pindicate, Zindicate, cs)
+            if self.use_val:
+                obj_val = self._loss_val(w, A_val, Pindicate_val, Zindicate_val)
             func_converge = abs(obj - prev_obj) < self.eps * (1 + prev_obj)
             restrict_converge = func_converge # and optimal_converge # and step_converge # (prev_obj - obj) < self.eps
             self.itGD += 1
@@ -215,7 +224,6 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
 
             # relative function tolerance
             generate_rule = restrict_converge
-
             prev_obj = obj
 
             find_rule = False
@@ -233,6 +241,10 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                 if find_rule:
                     z = pd.concat([z, zNew], axis=1, ignore_index=True)
                     A = np.concatenate((A, Anew), axis=1)
+                    if self.use_val:
+                        # Conjunctions corresponding to solutions
+                        Anew  = 1 - (np.dot(1 - X_val, zNew) > 0)
+                        A_val = np.concatenate((A_val, Anew), axis = 1)
                     w = np.concatenate((w, np.zeros(Anew.shape[1])))
                     avgw = np.concatenate((avgw, np.zeros(Anew.shape[1])))
                     self.b = np.concatenate((self.b, np.zeros(Anew.shape[1])))
@@ -242,10 +254,16 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                 if not self.silent:
                     print('Iteration: {}, Objective: {:.6f}, Convergence (abs.): {}, Generate rule: {},  Number of rules: {} '.format(self.it, obj, restrict_converge, generate_rule, w.shape[0]))            
 
+
             stop = False
             if restrict_converge:
                 stop = abs(obj - stop_obj) < self.eps * (1 + obj)
                 stop_obj = obj  
+
+            # records logs
+            self.logs["regobjs_train"].append(obj)
+            self.logs["objs_val"].append(obj_val)
+            self.logs["conv_points"].append(1 if restrict_converge else 0)  
 
             if restrict_converge and not find_rule and stop:
                 break
@@ -342,4 +360,4 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         """Return statistics.
 
         """
-        return self.real_obj
+        return self.real_obj, self.logs

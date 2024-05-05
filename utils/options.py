@@ -11,6 +11,12 @@ parser.add_argument(
     metavar='RESULTS_DIR',
     default='./results',
     help='results dir')
+    
+parser.add_argument(
+    '--logs_dir',
+    metavar='LOG_DIR',
+    default='./logs',
+    help='logs dir')
 
 parser.add_argument(
     '--dataset',

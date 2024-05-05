@@ -77,6 +77,15 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
         return loss
         
+    # return the value of the continuous validation loss function: 
+    def _loss_val(self, w, A_val, Pindicate_val, Zindicate_val):
+        Aw = np.dot(A_val, w)
+        n =  Aw.shape[0]
+        Ploss = np.sum(np.maximum(1 - Aw[Pindicate_val], 0))
+        Zloss = np.sum(np.minimum(Aw[Zindicate_val], 1))
+        loss =  (Ploss + Zloss) / n 
+        return loss
+    
     def _reduced_cost(self, w, r, A, Pindicate, Zindicate):
         Aw = np.dot(A, w)
         AwL1 = Aw <= 1
@@ -89,7 +98,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         r /= n
         return  r
     
-    def fit(self, X, y):
+    def fit(self, X, y, X_val, y_val):
         """Fit model to training data.
 
         Args:
@@ -113,12 +122,32 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         n = len(y)
         r = np.zeros(n)
 
+
         # Initialize with empty and singleton conjunctions, i.e. X plus all-ones feature
         # Feature indicator and conjunction matrices
         z = pd.DataFrame(np.eye(X.shape[1], X.shape[1]+1, 1, dtype=int), index=X.columns)
         A = np.hstack((np.ones((X.shape[0],1), dtype=int), X))
         cs = self.lambda0 + self.lambda1 * z.sum().values
         cs[0] = 0
+
+        if X_val.empty and y_val.empty:
+            self.use_val = False
+        else:
+            self.use_val = True
+
+        if self.use_val:
+            Pindicate_val = y_val > 0.5
+            P_val = np.where(Pindicate_val)[0]
+            Zindicate_val = y_val < 0.5
+            Z_val = np.where(Zindicate_val)[0]
+            nP_val = len(P_val)
+            n_val = len(y_val) 
+            A_val = np.hstack((np.ones((X_val.shape[0],1), dtype=int), X_val))
+        self.logs = {}
+        self.logs["regobjs_train"] = []
+        self.logs["objs_val"] = []
+        self.logs["conv_points"] = []
+
         # Iteration counter
         self.it = 0
         # Start time
@@ -136,7 +165,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             # Variables
             w = cvx.Variable(A.shape[1], nonneg=True)
             # Objective function
-            obj = cvx.Minimize(cvx.sum(xi) / n + (cvx.sum(A[at_neg,:] @ w if len(at_neg) != 0 else 0) + len(notat_neg)) / n + cvx.sum(cs @ w))
+            obj = cvx.Minimize(cvx.sum(xi) / n + (cvx.sum(A[at_neg,:] @ w if len(at_neg) != 0 else 0) + len(notat_neg)) / n + cvx.sum(cs @ w))    
             # Constraints
             constraints = [xi + A[P,:] @ w >= 1]
 
@@ -147,11 +176,18 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             #wLP = wLP + 2 / (2 + self.it) * (w.value - wLP)
             converge = np.linalg.norm(wLP -  w.value) < self.eps * np.linalg.norm(wLP) 
             wLP = w.value
-            self.real_obj = self._loss(wLP, A, Pindicate, Zindicate, cs)
-            
+            self.obj = self._loss(wLP, A, Pindicate, Zindicate, cs)
+            if self.use_val:
+                obj_val = self._loss_val(wLP, A_val, Pindicate_val, Zindicate_val)        
+
+            # records logs
+            self.logs["regobjs_train"].append(self.obj)
+            self.logs["objs_val"].append(obj_val)
+            self.logs["conv_points"].append(1 if converge else 0)  
+
             # Negative reduced costs found
             if not self.silent:
-                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, self.real_obj, w.value.shape[0]))
+                print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, self.obj, w.value.shape[0]))
 
             if converge:
                 # Extract dual variables
@@ -167,12 +203,17 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
                 # Add to existing conjunctions
                 z = pd.concat([z, zNew], axis=1, ignore_index=True)
                 A = np.concatenate((A, Anew), axis=1)
+                if self.use_val:
+                    # Conjunctions corresponding to solutions
+                    Anew  = 1 - (np.dot(1 - X_val, zNew) > 0)
+                    A_val = np.concatenate((A_val, Anew), axis = 1)
                 wLP = np.concatenate((wLP, np.zeros(Anew.shape[1])), axis=0)
                 cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
     
                 find_rule = (v < -self.eps).any()
                 if not find_rule:
                     break
+
 
             #print(z.shape, A.shape, wLP.shape, cs.shape)
             Aw = np.dot(A, wLP)
@@ -272,4 +313,4 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
 
         """
 
-        return self.real_obj
+        return self.obj, self.logs

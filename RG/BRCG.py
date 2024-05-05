@@ -33,7 +33,7 @@ class BRCGExplainer(DISExplainer):
         """
         pass
 
-    def fit(self, X_train, Y_train, *argv, **kwargs):
+    def fit(self, X_train, Y_train, X_val, y_val, *argv, **kwargs):
         """Fit model to training data.
 
         Args:
@@ -42,7 +42,7 @@ class BRCGExplainer(DISExplainer):
         Returns:
             BRCGExplainer: Self
         """
-        return self._model.fit(X_train, Y_train, **kwargs)
+        return self._model.fit(X_train, Y_train,  X_val, y_val, **kwargs)
 
     def predict(self, X, *argv, **kwargs):
         """Predict class labels.

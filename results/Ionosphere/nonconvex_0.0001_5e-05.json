@@ -1,0 +1,14 @@
+{
+    "acc_test_mean": 0.8959235483297766,
+    "acc_train_mean": 0.936139268549726,
+    "dataset": "Ionosphere",
+    "lambda0": 0.0001,
+    "lambda1": 5e-05,
+    "loss_mean": 0.6725447981408947,
+    "model": "nonconvex",
+    "n_features": 572,
+    "n_samples": 280,
+    "nconditions_mean": 4.573050519273264,
+    "nrules_mean": 4.573050519273264,
+    "time_mean": 5.048932021740671
+}
