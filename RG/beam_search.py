@@ -203,7 +203,6 @@ def beam_search(r, X, lambda0, lambda1, K=1, UB=0, D=10, B=5, wLB=0.5, eps=1e-6,
     deg = 0
     while (not len(vOut) or not stopEarly) and len(instCurr) and deg < D:
         deg += 1
-
         # Initialize list of children to process
         vNext = np.array([])
         vNextMax = np.inf
@@ -213,7 +212,6 @@ def beam_search(r, X, lambda0, lambda1, K=1, UB=0, D=10, B=5, wLB=0.5, eps=1e-6,
         
         # Process instances in queue
         for (idxInst, inst) in enumerate(instCurr):
-
             # Evaluate all singleton solutions
             inst.eval_singletons(lambda1)
 
@@ -235,19 +233,18 @@ def beam_search(r, X, lambda0, lambda1, K=1, UB=0, D=10, B=5, wLB=0.5, eps=1e-6,
                 UB = vOut.max()
                 zOut = zOut.iloc[:,indBest]
                 zOut.columns = range(zOut.shape[1])
-            
+
             # Compute lower bounds on higher-degree solutions
             inst.compute_LB(lambda1)
             # Evaluate children using weighted average of their costs and LBs
             vChild = (1 - wLB) * inst.v1 + wLB * inst.LB1
-            
+
             # Best children with potential to improve on current output and current candidates (allow for duplicate removal)
             vChild = vChild[(inst.LB1 < UB - eps) & (vChild < vNextMax - eps)].sort_values()[:B+idxInst]
             if len(vChild):
                 # Feature indicators of these best children
                 zChild = pd.DataFrame(zOut.index.values[:,np.newaxis] == vChild.index.values, index=zOut.index).astype(int)
                 zChild = zChild.add(inst.z0, axis=0)
-                
                 # Append to current candidates
                 vNext = np.append(vNext, vChild.values)
                 zNext = pd.concat([zNext, zChild], axis=1, ignore_index=True)
@@ -293,7 +290,7 @@ def beam_search(r, X, lambda0, lambda1, K=1, UB=0, D=10, B=5, wLB=0.5, eps=1e-6,
             Xp = Xp.loc[:, colKeep]
             Xn = Xn.loc[:, colKeep]
             instNext.append(PricingInstance(rp, rn, Xp, Xn, instCurr[idxInst].v1[i], zNext[idxz]))
-
+            
         instCurr = instNext
         
     # Conjunctions corresponding to solutions

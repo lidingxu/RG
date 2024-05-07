@@ -1,8 +1,8 @@
 python3 -u main.py \
---model dc \
+--model convex \
 --results_dir results \
 --logs_dir logs \
---dataset 'Ionosphere' \
+--dataset 'Bank Marketing' \
 --verbose 1 \
 --seed 10 \
 --lambda0  0.0001 \

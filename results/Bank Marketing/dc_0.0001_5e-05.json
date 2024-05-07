@@ -1,0 +1,14 @@
+{
+    "acc_test_mean": 0.9679800696377074,
+    "acc_train_mean": 0.9686248598104619,
+    "dataset": "Bank Marketing",
+    "lambda0": 0.0001,
+    "lambda1": 5e-05,
+    "loss_mean": 0.03132526349777665,
+    "model": "dc",
+    "n_features": 180,
+    "n_samples": 6273,
+    "nconditions_mean": 1.0,
+    "nrules_mean": 1.0,
+    "time_mean": 7.991766784283576
+}

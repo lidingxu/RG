@@ -25,8 +25,8 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         lambda0=0.001,
         lambda1=0.001,
         CNF=False,
-        iterMax=100,
-        timeMax=100,
+        iterMax=200,
+        timeMax=200,
         K=10,
         D=10,
         B=5,
@@ -77,7 +77,7 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
         return loss
     
-    def fit(self, X, y):
+    def fit(self, X, y, X_val, y_val):
         """Fit model to training data.
 
         Args:
@@ -104,6 +104,24 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         # Feature indicator and conjunction matrices
         z = pd.DataFrame(np.eye(X.shape[1], X.shape[1]+1, 1, dtype=int), index=X.columns)
         A = np.hstack((np.ones((X.shape[0],1), dtype=int), X))
+
+        if X_val.empty and y_val.empty:
+            self.use_val = False
+        else:
+            self.use_val = True
+
+        if self.use_val:
+            Pindicate_val = y_val > 0.5
+            P_val = np.where(Pindicate_val)[0]
+            Zindicate_val = y_val < 0.5
+            Z_val = np.where(Zindicate_val)[0]
+            nP_val = len(P_val)
+            n_val = len(y_val) 
+            A_val = np.hstack((np.ones((X_val.shape[0],1), dtype=int), X_val))
+        self.logs = {}
+        self.logs["regobjs_train"] = []
+        self.logs["conv_points"] = []
+
         # Iteration counter
         self.it = 0
         # Start time
@@ -147,9 +165,18 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
             if not self.silent:
                 print('Iteration: {}, Objective: {:.4f}, Hamming Objective: {:.4f}, Number of rules: {}'.format(self.it, prob.value, self.real_obj, w.value.shape[0]))
 
+            # records logs
+            self.logs["regobjs_train"].append(self.real_obj)
+            self.logs["conv_points"].append(1) 
+
             # Add to existing conjunctions
             z = pd.concat([z, zNew], axis=1, ignore_index=True)
             A = np.concatenate((A, Anew), axis=1)
+    
+            if self.use_val:
+                # Conjunctions corresponding to solutions
+                Anew  = 1 - (np.dot(1 - X_val, zNew) > 0)
+                A_val = np.concatenate((A_val, Anew), axis = 1)
 
             # Reformulate master LP
             # Variables
@@ -173,14 +200,22 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
             UB = min(UB.min(), 0)
             v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1,
                                         K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
+ 
 
         # Save generated conjunctions and LP solution
         self.z = z
         self.wLP = w.value
 
-        r = np.full(nP, 1./n)
-        self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
-                                UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+
+        if self.use_val:
+            r = np.full(nP_val, 1./n_val)
+            self.w = beam_search_K1(r, pd.DataFrame(1-A_val[P_val,:]), 0, A[Z_val,:].sum(axis=0) / n_val,
+                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        else:
+            r = np.full(nP, 1./n)
+            self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
+                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)
 
@@ -265,4 +300,4 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
 
         """
 
-        return self.real_obj
+        return self.real_obj, self.logs

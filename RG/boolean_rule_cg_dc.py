@@ -25,8 +25,8 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         lambda0=0.001,
         lambda1=0.001,
         CNF=False,
-        iterMax=50,
-        timeMax=100,
+        iterMax=100,
+        timeMax=200,
         K=10,
         D=10,
         B=5,
@@ -145,7 +145,6 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             A_val = np.hstack((np.ones((X_val.shape[0],1), dtype=int), X_val))
         self.logs = {}
         self.logs["regobjs_train"] = []
-        self.logs["objs_val"] = []
         self.logs["conv_points"] = []
 
         # Iteration counter
@@ -155,6 +154,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
 
         xi = cvx.Variable(nP, nonneg=True)
         
+        prev_obj = np.finfo(np.float64).max
         wLP = np.zeros(A.shape[1])
         Aw = np.dot(A, wLP)
         at_neg = np.where( Aw <= 1 & Zindicate)[0]
@@ -174,15 +174,12 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             prob.solve(solver=self.solver, verbose=self.verbose)
 
             #wLP = wLP + 2 / (2 + self.it) * (w.value - wLP)
-            converge = np.linalg.norm(wLP -  w.value) < self.eps * np.linalg.norm(wLP) 
             wLP = w.value
             self.obj = self._loss(wLP, A, Pindicate, Zindicate, cs)
-            if self.use_val:
-                obj_val = self._loss_val(wLP, A_val, Pindicate_val, Zindicate_val)        
-
+            converge = abs(self.obj - prev_obj) < self.eps * (1 + prev_obj)
+            prev_obj = self.obj
             # records logs
             self.logs["regobjs_train"].append(self.obj)
-            self.logs["objs_val"].append(obj_val)
             self.logs["conv_points"].append(1 if converge else 0)  
 
             # Negative reduced costs found
@@ -226,9 +223,15 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         self.z = z
         self.wLP = w.value
 
-        r = np.full(nP, 1./n)
-        self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
-                                UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        if self.use_val:
+            r = np.full(nP_val, 1./n_val)
+            self.w = beam_search_K1(r, pd.DataFrame(1-A_val[P_val,:]), 0, A[Z_val,:].sum(axis=0) / n_val,
+                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        else:
+            r = np.full(nP, 1./n)
+            self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
+                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)
 

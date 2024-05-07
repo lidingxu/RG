@@ -60,11 +60,17 @@ def main():
         print('-------------------')
         X_train, X_test = X_df.iloc[train_index], X_df.iloc[test_index]
         y_train, y_test = y[train_index], y[test_index]
-        X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25, random_state=args.seed)
         fb = FeatureBinarizer(negations=True)
-        X_train_fb = fb.fit_transform(X_train)
-        X_val_fb = fb.transform(X_val)
-        X_test_fb = fb.transform(X_test)
+        if args.val == 0:
+            X_train_fb = fb.fit_transform(X_train)
+            X_val_fb = None
+            y_val = None
+            X_test_fb = fb.transform(X_test)            
+        else:
+            X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=args.val, random_state=args.seed)
+            X_train_fb = fb.fit_transform(X_train)
+            X_val_fb = fb.transform(X_val)
+            X_test_fb = fb.transform(X_test)
                
         t0=timeit.default_timer()
 

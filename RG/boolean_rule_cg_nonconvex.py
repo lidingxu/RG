@@ -28,9 +28,9 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         lambda0=0.001,
         lambda1=0.001,
         CNF=False,
-        iterMax=150,
-        iterGDMax=10000,
-        timeMax=100,
+        iterMax=200,
+        iterGDMax=15000,
+        timeMax=200,
         K=10,
         D=10,
         B=5,
@@ -185,7 +185,6 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
             A_val = np.hstack((np.ones((X_val.shape[0],1), dtype=int), X_val))
         self.logs = {}
         self.logs["regobjs_train"] = []
-        self.logs["objs_val"] = []
         self.logs["conv_points"] = []
 
         cs = self.lambda0 + self.lambda1 * z.sum().values
@@ -213,15 +212,17 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         while (self.it < self.iterMax) and (self.itGD < self.iterGDMax) and (time.time()-self.starttime < self.timeMax):
             w, _ = self._gradient_descent(w, A, Pindicate, Zindicate, cs)
             obj = self._loss(w, A, Pindicate, Zindicate, cs)
-            if self.use_val:
-                obj_val = self._loss_val(w, A_val, Pindicate_val, Zindicate_val)
             func_converge = abs(obj - prev_obj) < self.eps * (1 + prev_obj)
             restrict_converge = func_converge # and optimal_converge # and step_converge # (prev_obj - obj) < self.eps
             self.itGD += 1
 
             avgw += (w - avgw) / (self.itGD)
-            self.real_obj = min(self.real_obj, obj)   
+            self.real_obj = obj   
 
+            # records logs
+            self.logs["regobjs_train"].append(obj)
+            self.logs["conv_points"].append(1 if restrict_converge else 0)  
+            
             # relative function tolerance
             generate_rule = restrict_converge
             prev_obj = obj
@@ -260,10 +261,6 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                 stop = abs(obj - stop_obj) < self.eps * (1 + obj)
                 stop_obj = obj  
 
-            # records logs
-            self.logs["regobjs_train"].append(obj)
-            self.logs["objs_val"].append(obj_val)
-            self.logs["conv_points"].append(1 if restrict_converge else 0)  
 
             if restrict_converge and not find_rule and stop:
                 break
@@ -273,9 +270,15 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         self.z = z
         self.wLP = w
 
-        r = np.full(nP, 1./n)
-        self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
-                                UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        if self.use_val:
+            r = np.full(nP_val, 1./n_val)
+            self.w = beam_search_K1(r, pd.DataFrame(1-A_val[P_val,:]), 0, A[Z_val,:].sum(axis=0) / n_val,
+                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        else:
+            r = np.full(nP, 1./n)
+            self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
+                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        
 
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)

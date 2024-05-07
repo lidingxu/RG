@@ -45,6 +45,12 @@ parser.add_argument(
     help='detailed log output level, set to 0 to disable')
 
 parser.add_argument(
+    '--val',
+    default=0.25, 
+    type=float, 
+    help='percentage of validation data set, 0 for disable')
+
+parser.add_argument(
     '--lambda0',
     default=0.001, 
     type=float, 
