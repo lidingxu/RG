@@ -35,6 +35,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         D=10,
         B=5,
         eps=1e-6,
+        maxRound=20,
         silent=False):
         """
         Args:
@@ -61,6 +62,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         self.K = K                  # maximum number of columns generated per iteration
         self.D = D                  # maximum degree
         self.B = B                  # beam search width
+        self.maxRound = maxRound
         # Numerical tolerance on comparisons
         self.eps = eps
         # Silence output
@@ -170,7 +172,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         # A: num_samples * num_rules
         A = np.hstack((np.ones((X.shape[0],1), dtype=int), X))
 
-        if X_val.empty and y_val.empty:
+        if X_val is None and y_val is None:
             self.use_val = False
         else:
             self.use_val = True
@@ -208,7 +210,10 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         self.real_obj = np.finfo(np.float64).max
         stop_obj = np.finfo(np.float64).max
         #stop_objs.fill(np.finfo(np.float64).max)
-        avgw = np.copy(w)
+        round_k = 0
+        best_obj = np.finfo(np.float64).max
+        best_w = np.rint(w)
+        best_z = z
         while (self.it < self.iterMax) and (self.itGD < self.iterGDMax) and (time.time()-self.starttime < self.timeMax):
             w, _ = self._gradient_descent(w, A, Pindicate, Zindicate, cs)
             obj = self._loss(w, A, Pindicate, Zindicate, cs)
@@ -216,7 +221,6 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
             restrict_converge = func_converge # and optimal_converge # and step_converge # (prev_obj - obj) < self.eps
             self.itGD += 1
 
-            avgw += (w - avgw) / (self.itGD)
             self.real_obj = obj   
 
             # records logs
@@ -247,7 +251,6 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                         Anew  = 1 - (np.dot(1 - X_val, zNew) > 0)
                         A_val = np.concatenate((A_val, Anew), axis = 1)
                     w = np.concatenate((w, np.zeros(Anew.shape[1])))
-                    avgw = np.concatenate((avgw, np.zeros(Anew.shape[1])))
                     self.b = np.concatenate((self.b, np.zeros(Anew.shape[1])))
                     cs = np.concatenate((cs, self.lambda0 + self.lambda1 * zNew.sum().values))
                 self.it += 1
@@ -255,30 +258,45 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                 if not self.silent:
                     print('Iteration: {}, Objective: {:.6f}, Convergence (abs.): {}, Generate rule: {},  Number of rules: {} '.format(self.it, obj, restrict_converge, generate_rule, w.shape[0]))            
 
-
             stop = False
             if restrict_converge:
                 stop = abs(obj - stop_obj) < self.eps * (1 + obj)
                 stop_obj = obj  
 
-
             if restrict_converge and not find_rule and stop:
-                break
-            
+                if  self.maxRound > 0:
+                    rd_w = np.rint(w)
+                    rd_obj = self._loss(rd_w, A, Pindicate, Zindicate, cs)
+                    if  rd_obj < best_obj:
+                        best_w = rd_w 
+                        best_z = z
+                        best_obj = rd_obj
+                    w = rd_w
+                    self.b = 0
+                    round_k += 1
+                    print('Round Iteration: {}, Round Obj: {}'.format(round_k, rd_obj))
+                    if round_k > self.maxRound:
+                        break
+                else:
+                    break
 
         # Save generated conjunctions and LP solution
         self.z = z
         self.wLP = w
 
-        if self.use_val:
-            r = np.full(nP_val, 1./n_val)
-            self.w = beam_search_K1(r, pd.DataFrame(1-A_val[P_val,:]), 0, A[Z_val,:].sum(axis=0) / n_val,
-                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+        if self.maxRound > 0:
+            self.w = best_w
+            self.z = best_z
         else:
-            r = np.full(nP, 1./n)
-            self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
-                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
-        
+            if self.use_val:
+                r = np.full(nP_val, 1./n_val)
+                self.w = beam_search_K1(r, pd.DataFrame(1-A_val[P_val,:]), 0, A[Z_val,:].sum(axis=0) / n_val,
+                                        UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+            else:
+                r = np.full(nP, 1./n)
+                self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
+                                        UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+                obj = self._loss(self.w, A, Pindicate, Zindicate, cs)
 
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)

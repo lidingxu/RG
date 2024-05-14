@@ -105,7 +105,7 @@ class BooleanRuleCGConvex(BaseEstimator, ClassifierMixin):
         z = pd.DataFrame(np.eye(X.shape[1], X.shape[1]+1, 1, dtype=int), index=X.columns)
         A = np.hstack((np.ones((X.shape[0],1), dtype=int), X))
 
-        if X_val.empty and y_val.empty:
+        if X_val is None and y_val is None:
             self.use_val = False
         else:
             self.use_val = True

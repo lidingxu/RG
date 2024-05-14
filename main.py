@@ -77,7 +77,7 @@ def main():
         if args.model == 'convex':
             boolean_model = BooleanRuleCGConvex(lambda0 = args.lambda0, lambda1 = args.lambda1, verbose = args.verbose > 1, silent = args.verbose == 0)
         elif args.model == 'nonconvex':
-            boolean_model = BooleanRuleCGNonconvex(lambda0 = args.lambda0, lambda1 = args.lambda1, silent = args.verbose == 0)
+            boolean_model = BooleanRuleCGNonconvex(lambda0 = args.lambda0, lambda1 = args.lambda1, silent = args.verbose == 0, maxRound = args.round)
         elif args.model == 'dc':
             boolean_model = BooleanRuleCGDC(lambda0 = args.lambda0, lambda1 = args.lambda1, verbose = args.verbose > 1, silent = args.verbose == 0)
         explainer = BRCGExplainer(boolean_model)

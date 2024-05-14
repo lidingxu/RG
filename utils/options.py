@@ -26,10 +26,17 @@ parser.add_argument(
 
 parser.add_argument(
     '--model',
-    '-a',
+    '-m',
     metavar='MODEL',
     default='convex',
     help='model architecture')
+    
+parser.add_argument(
+    '--round',
+    '-r',
+    default=0, 
+    type=int, 
+    help='Int rounds')
 
 parser.add_argument(
     '--seed', 
@@ -46,7 +53,7 @@ parser.add_argument(
 
 parser.add_argument(
     '--val',
-    default=0.25, 
+    default=0, 
     type=float, 
     help='percentage of validation data set, 0 for disable')
 

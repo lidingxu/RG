@@ -130,7 +130,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         cs = self.lambda0 + self.lambda1 * z.sum().values
         cs[0] = 0
 
-        if X_val.empty and y_val.empty:
+        if X_val is None and y_val is None:
             self.use_val = False
         else:
             self.use_val = True
