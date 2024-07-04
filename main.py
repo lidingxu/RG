@@ -77,11 +77,11 @@ def main():
         if args.model == 'convex':
             boolean_model = BooleanRuleCGConvex(lambda0 = args.lambda0, lambda1 = args.lambda1, verbose = args.verbose > 1, silent = args.verbose == 0)
         elif args.model == 'nonconvex':
-            boolean_model = BooleanRuleCGNonconvex(lambda0 = args.lambda0, lambda1 = args.lambda1, silent = args.verbose == 0, maxRound = args.round)
+            boolean_model = BooleanRuleCGNonconvex(lambda0 = args.lambda0, lambda1 = args.lambda1, lambda2= args.lambda2, silent = args.verbose == 0, maxRound = args.round, filter_eps = args.filter_eps)
         elif args.model == 'dc':
-            boolean_model = BooleanRuleCGDC(lambda0 = args.lambda0, lambda1 = args.lambda1, verbose = args.verbose > 1, silent = args.verbose == 0)
+            boolean_model = BooleanRuleCGDC(lambda0 = args.lambda0, lambda1 = args.lambda1, verbose = args.verbose > 1, silent = args.verbose == 0, filter_eps = args.filter_eps)
         explainer = BRCGExplainer(boolean_model)
-        explainer.fit(X_train_fb, y_train, X_val_fb, y_val)
+        explainer.fit(X_train_fb, y_train, None, None)
 
         t1=timeit.default_timer()
 

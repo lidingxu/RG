@@ -4,11 +4,11 @@
     "dataset": "Bank Marketing",
     "lambda0": 0.0001,
     "lambda1": 5e-05,
-    "loss_mean": 0.04369307568484368,
+    "loss_mean": 0.058977527037272,
     "model": "nonconvex",
     "n_features": 180,
     "n_samples": 7842,
-    "nconditions_mean": 2.3839555034549,
-    "nrules_mean": 2.3839555034549,
-    "time_mean": 18.898512279481313
+    "nconditions_mean": 181.00000000000006,
+    "nrules_mean": 181.00000000000006,
+    "time_mean": 2.5363421494897556
 }

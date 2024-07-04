@@ -33,6 +33,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         eps=1e-6,
         solver='ECOS',
         verbose=False,
+        filter_eps= 0.0,
         silent=False):
         """
         Args:
@@ -67,6 +68,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         self.verbose = verbose      # verboseness
         # Silence output
         self.silent = silent
+        self.filter_eps = filter_eps
 
     # return the value of the continuous Hamming loss function: 
     def _loss(self, w, A, Pindicate, Zindicate, cs):
@@ -74,7 +76,10 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         n =  Aw.shape[0]
         Ploss = np.sum(np.maximum(1 - Aw[Pindicate], 0))
         Zloss = np.sum(np.minimum(Aw[Zindicate], 1))
-        loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
+        if self.lambda2 > 0:
+            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) + self.lambda2 * np.square(1 - np.abs(w)) / 2
+        else:
+            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) 
         return loss
         
     # return the value of the continuous validation loss function: 
@@ -165,7 +170,6 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             # Variables
             w = cvx.Variable(A.shape[1], nonneg=True)
             # Objective function
-            obj = cvx.Minimize(cvx.sum(xi) / n + (cvx.sum(A[at_neg,:] @ w if len(at_neg) != 0 else 0) + len(notat_neg)) / n + cvx.sum(cs @ w))    
             # Constraints
             constraints = [xi + A[P,:] @ w >= 1]
 
@@ -228,9 +232,20 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             self.w = beam_search_K1(r, pd.DataFrame(1-A_val[P_val,:]), 0, A[Z_val,:].sum(axis=0) / n_val,
                                     UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
         else:
-            r = np.full(nP, 1./n)
-            self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
-                                    UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+            if self.filter_eps > 0:
+                filter_inds = np.where(self.wLP > self.filter_eps)
+                r = np.full(nP, 1./n)
+                A=A[:, filter_inds]
+                cs=cs[filter_inds]   
+                z=z[filter_inds]
+                self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
+                                        UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+                obj = self._loss(self.w, A, Pindicate, Zindicate, cs)          
+            else:
+                r = np.full(nP, 1./n)
+                self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
+                                        UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+                obj = self._loss(self.w, A, Pindicate, Zindicate, cs)
         
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)

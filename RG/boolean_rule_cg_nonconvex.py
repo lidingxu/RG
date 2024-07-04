@@ -27,6 +27,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
     def __init__(self,
         lambda0=0.001,
         lambda1=0.001,
+        lambda2=0.00,
         CNF=False,
         iterMax=200,
         iterGDMax=15000,
@@ -36,6 +37,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         B=5,
         eps=1e-6,
         maxRound=20,
+        filter_eps= 0.0,
         silent=False):
         """
         Args:
@@ -53,6 +55,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         # Complexity parameters
         self.lambda0 = lambda0      # fixed cost of each clause
         self.lambda1 = lambda1      # additional cost per literal
+        self.lambda2 = lambda2
         # CNF instead of DNF
         self.CNF = CNF
         # Column generation parameters
@@ -67,6 +70,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         self.eps = eps
         # Silence output
         self.silent = silent
+        self.filter_eps = filter_eps
     
     # return the value of the continuous loss function: 
     def _loss(self, w, A, Pindicate, Zindicate, cs):
@@ -75,6 +79,10 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         Ploss = np.sum(np.maximum(1 - Aw[Pindicate], 0))
         Zloss = np.sum(np.minimum(Aw[Zindicate], 1))
         loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
+        if self.lambda2 > 0:
+            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) + self.lambda2 * np.sum(np.minimum(1 -w, w ))
+        else:
+            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) 
         return loss
     
     # return the value of the continuous validation loss function: 
@@ -93,7 +101,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         n =  Aw.shape[0]
         at_pos = np.where( AwL1 & Pindicate)[0]
         at_neg = np.where( AwL1 & Zindicate)[0]
-        g = (-np.sum(A[at_pos], 0) + np.sum(A[at_neg], 0)) / n  + cs
+        g = (-np.sum(A[at_pos], 0) + np.sum(A[at_neg], 0)) / n  + cs + np.where(w >= 0.5, 1, -1) * self.lambda2
         return g
     
     # return the reduced cost
@@ -293,10 +301,20 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                 self.w = beam_search_K1(r, pd.DataFrame(1-A_val[P_val,:]), 0, A[Z_val,:].sum(axis=0) / n_val,
                                         UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
             else:
-                r = np.full(nP, 1./n)
-                self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
-                                        UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
-                obj = self._loss(self.w, A, Pindicate, Zindicate, cs)
+                if self.filter_eps > 0:
+                    filter_inds = np.where(self.wLP > self.filter_eps)
+                    r = np.full(nP, 1./n)
+                    A=A[:, filter_inds]
+                    cs=cs[filter_inds]   
+                    z=z[filter_inds]
+                    self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
+                                            UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+                    obj = self._loss(self.w, A, Pindicate, Zindicate, cs)          
+                else:
+                    r = np.full(nP, 1./n)
+                    self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
+                                            UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
+                    obj = self._loss(self.w, A, Pindicate, Zindicate, cs)
 
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)

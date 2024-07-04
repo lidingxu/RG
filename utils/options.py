@@ -69,5 +69,17 @@ parser.add_argument(
     type=float, 
     help='lambda1')
 
+parser.add_argument(
+    '--lambda2',
+    default=0.00, 
+    type=float, 
+    help='lambda2')
+
+parser.add_argument(
+    '--filter_eps',
+    default=0.00, 
+    type=float, 
+    help='filter threshold')
+
 
 args = parser.parse_args()
