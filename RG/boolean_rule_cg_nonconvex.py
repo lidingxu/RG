@@ -36,7 +36,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         D=10,
         B=5,
         eps=1e-6,
-        maxRound=20,
+        maxRound=0,
         filter_eps= 0.0,
         silent=False):
         """
@@ -208,6 +208,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
 
         # Formulate master LP
         w = np.random.uniform(size = A.shape[1])
+        print(w.shape, z.shape, A.shape)
 
         obj = self._loss(w, A, Pindicate, Zindicate, cs)
         if self.use_val:
@@ -248,7 +249,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                 UB = np.dot(r, A) + cs
                 UB = min(UB.min(), 0)
                 v, zNew, Anew = beam_search(r, X, self.lambda0, self.lambda1, K=self.K, UB=UB, D=self.D, B=self.B, eps=self.eps)
-
+		
                 find_rule = (v < -self.eps).any()
                 # Add to existing conjunctions
                 if find_rule:
@@ -302,11 +303,12 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                                         UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
             else:
                 if self.filter_eps > 0:
-                    filter_inds = np.where(self.wLP > self.filter_eps)
+                    filter_inds = self.wLP > self.filter_eps
+                    #print( self.filter_eps, self.wLP > self.filter_eps, self.wLP)
                     r = np.full(nP, 1./n)
                     A=A[:, filter_inds]
                     cs=cs[filter_inds]   
-                    z=z[filter_inds]
+                    self.z=self.z.loc[:,filter_inds]
                     self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
                                             UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
                     obj = self._loss(self.w, A, Pindicate, Zindicate, cs)          
@@ -315,6 +317,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
                     self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
                                             UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
                     obj = self._loss(self.w, A, Pindicate, Zindicate, cs)
+        print(self.w.shape, self.z.shape)
 
         if len(self.w) == 0:
             self.w = np.zeros_like(self.wLP, dtype=int)

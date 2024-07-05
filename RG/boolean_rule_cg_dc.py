@@ -237,7 +237,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
                 r = np.full(nP, 1./n)
                 A=A[:, filter_inds]
                 cs=cs[filter_inds]   
-                z=z[filter_inds]
+                self.z=self.z.loc[:,filter_inds]
                 self.w = beam_search_K1(r, pd.DataFrame(1-A[P,:]), 0, A[Z,:].sum(axis=0) / n + cs,
                                         UB=r.sum(), D=100, B=2*self.B, eps=self.eps, stopEarly=False)[1].values.ravel()
                 obj = self._loss(self.w, A, Pindicate, Zindicate, cs)          
