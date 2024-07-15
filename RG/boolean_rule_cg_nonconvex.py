@@ -38,6 +38,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         eps=1e-6,
         maxRound=0,
         filter_eps= 0.0,
+        is_ref=False,
         silent=False):
         """
         Args:
@@ -66,6 +67,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         self.D = D                  # maximum degree
         self.B = B                  # beam search width
         self.maxRound = maxRound
+        self.is_ref = is_ref
         # Numerical tolerance on comparisons
         self.eps = eps
         # Silence output
@@ -74,47 +76,74 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
     
     # return the value of the continuous loss function: 
     def _loss(self, w, A, Pindicate, Zindicate, cs):
-        Aw = np.dot(A, w)
-        n =  Aw.shape[0]
-        Ploss = np.sum(np.maximum(1 - Aw[Pindicate], 0))
-        Zloss = np.sum(np.minimum(Aw[Zindicate], 1))
-        loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
-        if self.lambda2 > 0:
-            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) + self.lambda2 * np.sum(np.minimum(1 -w, w ))
+        if self.is_ref:
+            Aw = A * w
+            Awmax = np.max(Aw, axis = 1)
+            n = Aw.shape[0]
+            Ploss = np.sum(1 - Awmax[Pindicate])
+            Zloss = np.sum(Awmax[Zindicate])
+            penalty = np.dot(cs , w) +  self.lambda2 * (np.sum(np.minimum(1 - Ploss, Ploss)) + np.sum(np.minimum(1 - Zloss, Zloss)))
         else:
-            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) 
+            Aw = np.dot(A, w)
+            n =  Aw.shape[0]
+            Ploss = np.sum(np.maximum(1 - Aw[Pindicate], 0))
+            Zloss = np.sum(np.minimum(Aw[Zindicate], 1))
+            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w)
+            penalty = np.dot(cs , w) + self.lambda2 * np.sum(np.minimum(1 - w, w ))
+        loss =  (Ploss + Zloss) / n  + penalty
         return loss
     
     # return the value of the continuous validation loss function: 
     def _loss_val(self, w, A_val, Pindicate_val, Zindicate_val):
-        Aw = np.dot(A_val, w)
-        n =  Aw.shape[0]
-        Ploss = np.sum(np.maximum(1 - Aw[Pindicate_val], 0))
-        Zloss = np.sum(np.minimum(Aw[Zindicate_val], 1))
+        if self.is_ref:
+            Aw = A_val * w
+            Awmax = np.max(Aw, axis = 1)
+            n = Aw.shape[0]
+            Ploss = np.sum(1 - Awmax[Pindicate_val])
+            Zloss = np.sum(Awmax[Zindicate_val])
+        else:
+            Aw = np.dot(A_val, w)
+            n =  Aw.shape[0]
+            Ploss = np.sum(np.maximum(1 - Aw[Pindicate_val], 0))
+            Zloss = np.sum(np.minimum(Aw[Zindicate_val], 1))
         loss =  (Ploss + Zloss) / n 
         return loss
 
     # return the gradient 
     def _gradient(self, w, A, Pindicate, Zindicate, cs):
-        Aw = np.dot(A, w)
-        AwL1 = Aw <= 1
-        n =  Aw.shape[0]
-        at_pos = np.where( AwL1 & Pindicate)[0]
-        at_neg = np.where( AwL1 & Zindicate)[0]
-        g = (-np.sum(A[at_pos], 0) + np.sum(A[at_neg], 0)) / n  + cs + np.where(w >= 0.5, -1, 1) * self.lambda2
+        if self.is_ref:
+            Aw = A * w
+            Awargmax = np.argmax(Aw, axis = 1)
+            Amask = np.zeros(A.shape)
+            intpeng = 0 * w
+            for i,j in enumerate(Awargmax):
+                Amask[i,j] = 1
+                intpeng[j] = -1 if w[j] >= 0.5 else 1 
+            n = Aw.shape[0]
+            g =  (-np.sum(Amask[Pindicate], 0) + np.sum(Amask[Zindicate], 0) ) / n + cs + self.lambda2 * intpeng
+        else:
+            Aw = np.dot(A, w)
+            AwL1 = Aw <= 1
+            n =  Aw.shape[0]
+            at_pos = np.where( AwL1 & Pindicate)[0]
+            at_neg = np.where( AwL1 & Zindicate)[0]
+            g = (-np.sum(A[at_pos], 0) + np.sum(A[at_neg], 0)) / n  + cs + self.lambda2 * np.where(w >= 0.5, -1, 1)
         return g
     
     # return the reduced cost
     def _reduced_cost(self, w, r, A, Pindicate, Zindicate):
-        Aw = np.dot(A, w)
-        AwL1 = Aw <= 1
-        n =  Aw.shape[0]
-        at_pos = np.where( AwL1 & Pindicate)[0]
-        at_neg = np.where( AwL1 & Zindicate)[0]
-        r.fill(0)
-        r[at_pos] += -1
-        r[at_neg] += 1
-        r /= n
+        if self.is_ref:
+            pass
+        else:
+            Aw = np.dot(A, w)
+            AwL1 = Aw <= 1
+            n =  Aw.shape[0]
+            at_pos = np.where( AwL1 & Pindicate)[0]
+            at_neg = np.where( AwL1 & Zindicate)[0]
+            r.fill(0)
+            r[at_pos] += -1
+            r[at_neg] += 1
+            r /= n
         return  r
 
     # gradient descent with line search

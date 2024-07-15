@@ -24,6 +24,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
     def __init__(self,
         lambda0=0.001,
         lambda1=0.001,
+        lambda2=0.00,
         CNF=False,
         iterMax=100,
         timeMax=200,
@@ -53,6 +54,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         # Complexity parameters
         self.lambda0 = lambda0      # fixed cost of each clause
         self.lambda1 = lambda1      # additional cost per literal
+        self.lambda2 = lambda2
         # CNF instead of DNF
         self.CNF = CNF
         # Column generation parameters
@@ -77,7 +79,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
         Ploss = np.sum(np.maximum(1 - Aw[Pindicate], 0))
         Zloss = np.sum(np.minimum(Aw[Zindicate], 1))
         if self.lambda2 > 0:
-            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) + self.lambda2 * np.square(1 - np.abs(w)) / 2
+            loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) + self.lambda2 * np.sum(np.minimum(1 -w, w ))
         else:
             loss =  (Ploss + Zloss) / n  +  np.dot(cs , w) 
         return loss
@@ -170,6 +172,7 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             # Variables
             w = cvx.Variable(A.shape[1], nonneg=True)
             # Objective function
+            obj = cvx.Minimize(cvx.sum(xi) / n + (cvx.sum(A[at_neg,:] @ w if len(at_neg) != 0 else 0) + len(notat_neg)) / n + cvx.sum(cs @ w) + cvx.sum(np.where(w >= 0.5, -1, 1)) * self.lambda2 )
             # Constraints
             constraints = [xi + A[P,:] @ w >= 1]
 
