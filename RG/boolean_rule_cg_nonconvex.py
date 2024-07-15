@@ -101,7 +101,7 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
         n =  Aw.shape[0]
         at_pos = np.where( AwL1 & Pindicate)[0]
         at_neg = np.where( AwL1 & Zindicate)[0]
-        g = (-np.sum(A[at_pos], 0) + np.sum(A[at_neg], 0)) / n  + cs + np.where(w >= 0.5, 1, -1) * self.lambda2
+        g = (-np.sum(A[at_pos], 0) + np.sum(A[at_neg], 0)) / n  + cs + np.where(w >= 0.5, -1, 1) * self.lambda2
         return g
     
     # return the reduced cost
