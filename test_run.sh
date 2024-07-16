@@ -1,5 +1,5 @@
 python3 -u main.py \
---model nonconvex \
+--model dc \
 --results_dir results \
 --logs_dir logs \
 --dataset 'Bank Marketing' \
