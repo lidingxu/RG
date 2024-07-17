@@ -1,0 +1,14 @@
+{
+    "acc_test_mean": 0.886930393249372,
+    "acc_train_mean": 0.8924785608686663,
+    "dataset": "Banknote Authentication",
+    "lambda0": 0.0,
+    "lambda1": 0.0,
+    "loss_mean": 0.5553790200946102,
+    "model": "dc",
+    "n_features": 72,
+    "n_samples": 1372,
+    "nconditions_mean": 2.0,
+    "nrules_mean": 2.0,
+    "time_mean": 3.0804250833552493
+}
