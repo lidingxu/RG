@@ -174,8 +174,8 @@ class BooleanRuleCGDC(BaseEstimator, ClassifierMixin):
             # Objective function
             obj = cvx.Minimize(cvx.sum(xi) / n + (cvx.sum(A[at_neg,:] @ w if len(at_neg) != 0 else 0) + len(notat_neg)) / n + cvx.sum(cs @ w) + cvx.sum( np.where(wLP >= 0.5, -1, 1) @ w ) * self.lambda2)
             # Constraints
-            constraints = [xi + A[P,:] @ w >= 1]
-            constraints = [w <= 1]
+            constraints = [xi + A[P,:] @ w >= 1, w <= 1]
+            #constraints = [w <= 1]
 
             # Solve problem
             prob = cvx.Problem(obj, constraints)
