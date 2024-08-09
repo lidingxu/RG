@@ -80,8 +80,8 @@ class BooleanRuleCGNonconvex(BaseEstimator, ClassifierMixin):
             Aw = A * w
             Awmax = np.max(Aw, axis = 1)
             n = Aw.shape[0]
-            Ploss = np.sum(1 - Awmax[Pindicate])
-            Zloss = np.sum(Awmax[Zindicate])
+            Ploss = 1 - Awmax[Pindicate]
+            Zloss = Awmax[Zindicate]
             penalty = np.dot(cs , w) +  self.lambda2 * (np.sum(np.minimum(1 - Ploss, Ploss)) + np.sum(np.minimum(1 - Zloss, Zloss)))
         else:
             Aw = np.dot(A, w)
